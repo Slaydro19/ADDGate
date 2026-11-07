@@ -35,7 +35,56 @@ function PasswordForm() {
   );
 }
 
-export default function Settings({ user }) {
+function TerminalSettings({ go }) {
+  const [st, setSt] = useState(null);
+  const [events, setEvents] = useState([]);
+  const [pw, setPw] = useState("");
+  const [msg, setMsg] = useState(null);
+  const load = () => {
+    api("/terminal/status").then(setSt).catch(() => {});
+    api("/audit").then((r) => setEvents(r.events)).catch(() => {});
+  };
+  useEffect(load, []);
+  if (!st) return null;
+  async function turnOff(e) {
+    e.preventDefault(); setMsg(null);
+    try { await api("/terminal/enable", { method: "POST", body: { enabled: false, password: pw } }); setPw(""); load(); }
+    catch (err) { setMsg(err.message); }
+  }
+  const label = { terminal_open: "Terminal opened", terminal_close: "Terminal closed", terminal_refused: "Connection refused",
+    terminal_enabled: "Terminal turned on", terminal_disabled: "Terminal turned off", login_locked: "Login locked (5 wrong passwords)",
+    confirm_locked: "Unlock locked (5 wrong passwords)" };
+  return (
+    <section className="panel">
+      <h2>Terminal and security log</h2>
+      {st.enabled ? (
+        <form onSubmit={turnOff} className="row" style={{ alignItems: "flex-end" }}>
+          <div className="field" style={{ flex: "1 1 220px" }}>
+            <label htmlFor="offpw">The terminal is on. Password to turn it off</label>
+            <input id="offpw" type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+          </div>
+          <button className="btn" type="submit" disabled={!pw}>Turn off terminal</button>
+          {msg && <span role="alert" style={{ color: "var(--red)" }}>{msg}</span>}
+        </form>
+      ) : (
+        <div className="row"><span className="muted">The terminal is off.</span>
+          <button className="btn small" onClick={() => go("terminal")}>Set it up</button></div>
+      )}
+      <div className="audit" aria-label="Security log">
+        {events.length === 0 && <span className="muted">Nothing logged yet.</span>}
+        {events.map((e, i) => (
+          <div key={i}>
+            <span className="mono muted">{new Date(e.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+            <span>{label[e.event] || e.event}</span>
+            <span className="faint">{e.detail}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export default function Settings({ user, go }) {
   const [cfg, setCfg] = useState(null);
   const [repos, setRepos] = useState("");
   const [saved, setSaved] = useState(false);
@@ -75,6 +124,8 @@ export default function Settings({ user }) {
         <PasswordForm />
       </section>
 
+      {user.is_owner && <TerminalSettings go={go} />}
+
       <section className="panel">
         <h2>Claude Code Stop hook</h2>
         {hook?.installed ? (
@@ -109,8 +160,9 @@ export default function Settings({ user }) {
             <input id="hint" type="number" min="0" value={cfg.hint_delay_seconds} onChange={set("hint_delay_seconds")} />
           </div>
           <div className="field" style={{ flex: "1 1 200px" }}>
-            <label htmlFor="budget">Daily token budget for the meter</label>
-            <input id="budget" type="number" min="0" step="10000" value={cfg.daily_token_budget} onChange={set("daily_token_budget")} />
+            <label htmlFor="budget">Warn me after this many tokens a day (0 = off)</label>
+            <input id="budget" type="number" min="0" step="10000" value={cfg.daily_token_limit} onChange={set("daily_token_limit")} />
+            <span className="faint">Counts only ADDGate's own calls. Your real plan usage is in Claude → Settings → Usage.</span>
           </div>
           <div className="field" style={{ flex: "1 1 200px" }}>
             <label htmlFor="model">Model (blank = Claude Code default)</label>

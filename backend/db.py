@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from config import GATE_HOME
 
 DB_FILE = GATE_HOME / "addgate.db"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 _local = threading.local()
 
 SCHEMA = """
@@ -109,6 +109,39 @@ CREATE TABLE IF NOT EXISTS usage (                -- one Claude login per Mac, s
 """
 
 
+# Upgrades applied in order on top of SCHEMA. Only ever append; never edit a shipped step.
+MIGRATIONS = {
+    2: [
+        # usage: tokens that count (excludes cheap cache reads)
+        "ALTER TABLE usage ADD COLUMN work_tokens INTEGER NOT NULL DEFAULT 0",
+        # questions: multiple choice + how it was answered
+        "ALTER TABLE questions ADD COLUMN choices TEXT",          # JSON [{text, misconception}]
+        "ALTER TABLE questions ADD COLUMN correct INTEGER",       # index into choices
+        "ALTER TABLE questions ADD COLUMN choice INTEGER",        # what they picked
+        "ALTER TABLE questions ADD COLUMN confidence TEXT",
+        "ALTER TABLE questions ADD COLUMN flags TEXT",            # JSON honesty signals
+        # attempts: same signals, for history and didn't-hold tracking
+        "ALTER TABLE attempts ADD COLUMN confidence TEXT",
+        "ALTER TABLE attempts ADD COLUMN choice_correct INTEGER",
+        "ALTER TABLE attempts ADD COLUMN looked_up INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE attempts ADD COLUMN flags TEXT",
+    ],
+    3: [
+        # the owner (first account) is the only one who can use the terminal
+        "ALTER TABLE users ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0",
+        "UPDATE users SET is_owner = 1 WHERE id = (SELECT id FROM users ORDER BY created, rowid LIMIT 1)",
+        """CREATE TABLE IF NOT EXISTS audit (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT,
+            at      TEXT NOT NULL,
+            event   TEXT NOT NULL,
+            detail  TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS audit_at ON audit (at)",
+    ],
+}
+
+
 def connect():
     conn = getattr(_local, "conn", None)
     if conn is None:
@@ -147,9 +180,22 @@ def all_rows(sql, params=()):
 def init():
     conn = connect()
     version = conn.execute("PRAGMA user_version").fetchone()[0]
-    if version < SCHEMA_VERSION:
+    if version < 1:
         conn.executescript(SCHEMA)
-        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        version = 1
+        conn.execute("PRAGMA user_version = 1")
+    for target in sorted(MIGRATIONS):
+        if version < target:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                for stmt in MIGRATIONS[target]:
+                    conn.execute(stmt)
+                conn.execute(f"PRAGMA user_version = {int(target)}")
+                conn.execute("COMMIT")
+            except BaseException:
+                conn.execute("ROLLBACK")
+                raise
+            version = target
     if DB_FILE.exists():
         DB_FILE.chmod(0o600)  # contains password hashes
 

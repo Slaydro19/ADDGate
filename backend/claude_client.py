@@ -27,15 +27,17 @@ def claude_path():
 
 def _record_usage(payload):
     usage = payload.get("usage") or {}
-    tokens = sum(int(usage.get(k) or 0) for k in (
-        "input_tokens", "output_tokens",
-        "cache_creation_input_tokens", "cache_read_input_tokens"))
+    # Cache reads (Claude Code's built-in instructions, re-read on every call) are cheap and
+    # count far less toward plan limits, so they're left out of the work-token count.
+    work = sum(int(usage.get(k) or 0) for k in ("input_tokens", "output_tokens", "cache_creation_input_tokens"))
+    total = work + int(usage.get("cache_read_input_tokens") or 0)
     cost = float(payload.get("total_cost_usd") or 0)
     with db.write() as c:  # one statement, so parallel calls add up instead of overwriting
-        c.execute("INSERT INTO usage (day, tokens, calls, cost_usd) VALUES (?, ?, 1, ?) "
+        c.execute("INSERT INTO usage (day, tokens, work_tokens, calls, cost_usd) VALUES (?, ?, ?, 1, ?) "
                   "ON CONFLICT(day) DO UPDATE SET tokens = tokens + excluded.tokens, "
+                  "work_tokens = work_tokens + excluded.work_tokens, "
                   "calls = calls + 1, cost_usd = cost_usd + excluded.cost_usd",
-                  (date.today().isoformat(), tokens, cost))
+                  (date.today().isoformat(), total, work, cost))
 
 
 def note_limit_hit(message):
@@ -126,13 +128,16 @@ def check_connection():
 
 
 def usage_today():
+    """ADDGate's own Claude calls today. This is NOT your plan's remaining quota (there's no
+    supported way to read that); Claude's Settings > Usage page is the source of truth."""
     cfg = load_config()
-    day = db.one("SELECT tokens, calls, cost_usd, limit_message FROM usage WHERE day = ?",
-                 (date.today().isoformat(),)) or {"tokens": 0, "calls": 0, "cost_usd": 0.0}
-    day["cost_usd"] = round(day["cost_usd"], 4)
-    if not day.get("limit_message"):
-        day.pop("limit_message", None)
-    budget = int(cfg.get("daily_token_budget") or 0)
-    pct = round(100 * day["tokens"] / budget, 1) if budget else 0
-    level = "red" if day.get("limit_message") else "amber" if pct >= 80 else "ok"
-    return {**day, "budget": budget, "percent": pct, "level": level}
+    row = db.one("SELECT work_tokens, calls, limit_message FROM usage WHERE day = ?",
+                 (date.today().isoformat(),)) or {}
+    tokens, calls = int(row.get("work_tokens") or 0), int(row.get("calls") or 0)
+    limit = int(cfg.get("daily_token_limit") or 0)  # optional warning the user sets; 0 = off
+    pct = round(100 * tokens / limit, 1) if limit else None
+    level = "red" if row.get("limit_message") else "amber" if pct is not None and pct >= 80 else "ok"
+    out = {"tokens": tokens, "calls": calls, "limit": limit, "percent": pct, "level": level}
+    if row.get("limit_message"):
+        out["limit_message"] = row["limit_message"]
+    return out

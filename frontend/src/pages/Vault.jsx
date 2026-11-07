@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { api, fmtDate } from "../api.js";
 import { Spinner } from "../icons.jsx";
+import { flagText } from "../components/QuizCard.jsx";
+
+const CONF = { sure: "sure", fairly: "fairly sure", guessing: "guessing" };
 
 const FILTERS = ["all", "owned", "partial", "borrowed", "relearn"];
 
@@ -39,7 +42,11 @@ export default function Vault() {
                 <div style={{ fontWeight: 600, fontSize: 16 }}>{c.name}</div>
                 <div className="mono muted">{c.category}</div>
               </div>
-              <span className={`status s-${c.status}`}>{c.status}</span>
+              <span className="row" style={{ gap: 6 }}>
+                {c.held === false && <span className="heldtag no" title="Owned the first time, missed when asked again">didn't hold</span>}
+                {c.held === true && <span className="heldtag yes" title="Owned the first time and still owned later">held</span>}
+                <span className={`status s-${c.status}`}>{c.status}</span>
+              </span>
             </div>
             {c.why && <div className="muted" style={{ fontSize: 14 }}>{c.why}</div>}
             <div className="row mono muted" style={{ justifyContent: "space-between" }}>
@@ -52,10 +59,13 @@ export default function Vault() {
             )}
             {open === c.id && c.history.slice().reverse().map((h, i) => (
               <div key={i} className="item" style={{ fontSize: 14 }}>
-                <div className="top"><span className="mono muted">{fmtDate(h.date.slice(0, 10))} · {h.source}</span>
+                <div className="top"><span className="mono muted">{fmtDate(h.date.slice(0, 10))} · {h.source}
+                  {h.choice_correct != null && ` · picked ${h.choice_correct ? "right" : "wrong"}`}
+                  {h.confidence && ` · ${CONF[h.confidence]}`}</span>
                   <span className={`status s-${h.verdict}`}>{h.verdict}</span></div>
                 <div>{h.question}</div>
                 <div className="muted">{h.answer || "(no answer)"}</div>
+                {h.flags?.length > 0 && <div className="flagchips">{h.flags.map((f, j) => <span key={j} className="flagchip">{flagText(f)}</span>)}</div>}
               </div>
             ))}
           </div>

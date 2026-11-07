@@ -6,7 +6,8 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory, session
+from flask import Flask, g, jsonify, request, send_from_directory, session
+from flask_sock import Sock
 
 import capture
 import db
@@ -14,10 +15,17 @@ import migrate
 import claude_client as cc
 import gate
 import hook_install
+import security
+import stats as stats_mod
+import terminal
 import users
-from config import DEFAULT_CONFIG, SECRET_FILE, ensure_dirs, load_config, save_config, use_user
+from config import (DEFAULT_CONFIG, PROTECTED_CONFIG, SECRET_FILE, ensure_dirs, load_config, save_config,
+                    use_user)
 
 STATIC = Path(__file__).parent / "static"
+PORT = int(os.environ.get("ADDGATE_PORT", 5055))
+DEV = bool(os.environ.get("ADDGATE_DEV") or os.environ.get("FLASK_DEBUG"))
+ALLOWED_PORTS = {PORT} | ({5173} if DEV else set())  # 5173 = Vite dev server in dev mode only
 PUBLIC_API = {"/api/status", "/api/auth/me", "/api/auth/login", "/api/auth/signup", "/api/auth/logout"}
 
 
@@ -42,6 +50,7 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 _conn_cache = {"at": 0, "value": None}
+sock = Sock(app)
 
 
 # ---------- request guards ----------
@@ -49,6 +58,10 @@ _conn_cache = {"at": 0, "value": None}
 @app.before_request
 def guard():
     use_user(None)
+    if not security.host_ok(request.host):  # DNS rebinding: only requests addressed to localhost
+        return "Forbidden: ADDGate only answers to localhost.", 403
+    if request.path == "/ws/terminal":  # checked BEFORE the WebSocket handshake is accepted
+        return _terminal_gate()
     if not request.path.startswith("/api/"):
         return None
     # Blocks cross-site form posts: browsers can't send JSON cross-origin without a CORS preflight.
@@ -64,8 +77,20 @@ def guard():
     return None
 
 
+@app.after_request
+def headers(resp):
+    return security.security_headers(resp, ALLOWED_PORTS)
+
+
+@app.errorhandler(terminal.TerminalError)
+def terminal_error(e):
+    return jsonify(error=str(e), kind="terminal"), 409
+
+
 @app.errorhandler(cc.ClaudeError)
 def claude_error(e):
+    if e.kind in ("auth", "missing"):  # a real call just proved the connection is gone
+        _conn_cache.update(at=time.time(), value={"connected": False, "kind": e.kind, "message": str(e)})
     code = {"limit": 429, "missing": 503, "auth": 401, "empty": 409}.get(e.kind, 502)
     return jsonify(error=str(e), kind=e.kind), code
 
@@ -108,7 +133,16 @@ def signup():
 @app.post("/api/auth/login")
 def login():
     b = body()
-    user = users.authenticate(b.get("username"), b.get("password"))
+    wait = security.login_blocked(b.get("username"))
+    if wait:
+        return jsonify(error=f"Too many wrong passwords. Try again in {wait // 60 + 1} min.", kind="auth_form"), 429
+    try:
+        user = users.authenticate(b.get("username"), b.get("password"))
+    except users.AuthError:
+        if security.login_failed(b.get("username")):
+            security.audit(None, "login_locked", (b.get("username") or "")[:40])
+        raise
+    security.login_succeeded(b.get("username"))
     session.clear()
     session.permanent = bool(b.get("remember", True))
     session["uid"] = user["id"]
@@ -117,6 +151,8 @@ def login():
 
 @app.post("/api/auth/logout")
 def logout():
+    if session.get("uid"):
+        terminal.close_all(session["uid"], "signed out")
     session.clear()
     return jsonify(ok=True)
 
@@ -128,12 +164,120 @@ def password():
     return jsonify(ok=True)
 
 
+@app.post("/api/auth/confirm")
+def confirm_password():
+    """'sudo mode': re-enter your password to unlock sensitive actions for 15 minutes."""
+    uid = session["uid"]
+    key = f"confirm:{uid}"
+    wait = security.login_blocked(key)
+    if wait:
+        return jsonify(error=f"Too many wrong passwords. Try again in {wait // 60 + 1} min.", kind="auth_form"), 429
+    if not users.check_password(uid, body().get("password")):
+        if security.login_failed(key):
+            security.audit(uid, "confirm_locked")
+        return jsonify(error="That's not your password.", kind="auth_form"), 400
+    security.login_succeeded(key)
+    session["reauth_at"] = time.time()
+    return jsonify(ok=True, unlocked_for=terminal.REAUTH_TTL)
+
+
+def _unlocked():
+    return time.time() - float(session.get("reauth_at") or 0) < terminal.REAUTH_TTL
+
+
+def _owner():
+    user = users.get(session.get("uid"))
+    return user if user and user.get("is_owner") else None
+
+
+# ---------- terminal (owner only) ----------
+
+@app.get("/api/terminal/status")
+def terminal_status():
+    owner = _owner()
+    left = max(0, int(terminal.REAUTH_TTL - (time.time() - float(session.get("reauth_at") or 0))))
+    return jsonify(allowed=bool(owner), enabled=bool(owner) and bool(load_config().get("terminal_enabled")),
+                   unlocked=_unlocked(), unlocked_seconds=left if _unlocked() else 0,
+                   sessions=terminal.count(session["uid"]), max_sessions=terminal.MAX_SESSIONS)
+
+
+@app.post("/api/terminal/enable")
+def terminal_enable():
+    owner = _owner()
+    if not owner:
+        return jsonify(error="Only the owner of this Mac's ADDGate can use the terminal.", kind="forbidden"), 403
+    b = body()
+    if not users.check_password(owner["id"], b.get("password")):
+        return jsonify(error="That's not your password.", kind="auth_form"), 400
+    cfg = load_config()
+    cfg["terminal_enabled"] = bool(b.get("enabled"))
+    save_config(cfg)
+    if not cfg["terminal_enabled"]:
+        terminal.close_all(owner["id"], "terminal turned off")
+    else:
+        session["reauth_at"] = time.time()
+    security.audit(owner["id"], "terminal_enabled" if cfg["terminal_enabled"] else "terminal_disabled")
+    return jsonify(enabled=cfg["terminal_enabled"])
+
+
+@app.post("/api/terminal/ticket")
+def terminal_ticket():
+    owner = _owner()
+    if not owner or not load_config().get("terminal_enabled"):
+        return jsonify(error="The terminal is off.", kind="forbidden"), 403
+    if not _unlocked():
+        return jsonify(error="Confirm your password to open a terminal.", kind="reauth"), 403
+    return jsonify(ticket=terminal.issue_ticket(owner["id"]))
+
+
+def _terminal_gate():
+    """Every lock, checked before the WebSocket upgrade. Any failure is a plain 403."""
+    uid = session.get("uid")
+    owner = _owner()
+    reasons = []
+    if not security.origin_ok(request.headers.get("Origin"), ALLOWED_PORTS):
+        reasons.append("bad origin")
+    if not owner or owner["id"] != uid:
+        reasons.append("not owner")
+    else:
+        use_user(uid)
+        if not load_config().get("terminal_enabled"):
+            reasons.append("terminal off")
+        if not _unlocked():
+            reasons.append("not unlocked")
+    if not terminal.redeem_ticket(request.args.get("ticket"), uid):  # always spent, even on failure
+        reasons.append("bad ticket")
+    if reasons:
+        security.audit(uid, "terminal_refused", ", ".join(reasons) + f" (origin {request.headers.get('Origin')})")
+        return "Forbidden", 403
+    g.terminal_uid = uid
+    return None
+
+
+@sock.route("/ws/terminal")
+def terminal_socket(ws):
+    uid = getattr(g, "terminal_uid", None)
+    if not uid:  # unreachable: _terminal_gate runs first; kept as a second lock
+        ws.close(reason=1008, message="Not allowed")
+        return
+    terminal.run(ws, uid, security.audit)
+
+
+@app.get("/api/audit")
+def audit_log():
+    if not _owner():
+        return jsonify(error="Owner only.", kind="forbidden"), 403
+    return jsonify(events=security.recent_audit())
+
+
 # ---------- Claude connection + usage (shared by the whole machine) ----------
 
 @app.get("/api/status")
 def status():
+    # A check is a real Claude call, so it only runs on startup, when you press Refresh, or while
+    # disconnected. Otherwise the last result stands until a real call fails with an auth error.
     fresh = request.args.get("refresh") == "1"
-    if fresh or not _conn_cache["value"] or time.time() - _conn_cache["at"] > 600:
+    if fresh or not _conn_cache["value"]:
         _conn_cache.update(at=time.time(), value=cc.check_connection())
     return jsonify(_conn_cache["value"])
 
@@ -180,7 +324,7 @@ def gate_today():
 @app.post("/api/gate/answer")
 def gate_answer():
     b = body()
-    return jsonify(gate.answer_gate(b["question_id"], b.get("answer", "")))
+    return jsonify(gate.answer_gate(b["question_id"], b))
 
 
 @app.get("/api/review")
@@ -197,7 +341,7 @@ def review_question(cid):
 
 @app.post("/api/review/<cid>/answer")
 def review_answer(cid):
-    return jsonify(gate.answer_review(cid, body().get("answer", "")))
+    return jsonify(gate.answer_review(cid, body()))
 
 
 @app.get("/api/vault")
@@ -206,6 +350,11 @@ def vault():
     for c in items:
         c.pop("pending", None)
     return jsonify(concepts=items)
+
+
+@app.get("/api/stats")
+def stats():
+    return jsonify(stats_mod.stats())
 
 
 @app.get("/api/config")
@@ -218,7 +367,7 @@ def put_config():
     b = body()
     cfg = load_config()
     for key in DEFAULT_CONFIG:
-        if key in b:
+        if key in b and key not in PROTECTED_CONFIG:  # the terminal switch has its own guarded route
             cfg[key] = b[key]
     cfg["repos"] = [str(Path(r).expanduser()) for r in cfg.get("repos", []) if str(r).strip()]
     save_config(cfg)
@@ -245,6 +394,5 @@ def spa(path):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("ADDGATE_PORT", 5055))
-    print(f"ADDGate running at http://localhost:{port}")
-    app.run(host="127.0.0.1", port=port, debug=False, threaded=True)
+    print(f"ADDGate running at http://localhost:{PORT}")
+    app.run(host="127.0.0.1", port=PORT, debug=False, threaded=True)

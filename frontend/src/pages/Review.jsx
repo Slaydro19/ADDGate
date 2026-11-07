@@ -21,8 +21,8 @@ export default function Review({ go, refreshUsage }) {
     finally { setLoadingQ(false); }
   }
 
-  async function submit(answer) {
-    const res = await api(`/review/${active.id}/answer`, { method: "POST", body: { answer } });
+  async function submit(payload) {
+    const res = await api(`/review/${active.id}/answer`, { method: "POST", body: payload });
     setDoneIds((d) => [...d, active.id]);
     refreshUsage();
     return res;

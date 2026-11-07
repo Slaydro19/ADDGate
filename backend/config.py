@@ -22,11 +22,13 @@ SECRET_FILE = GATE_HOME / "secret.key"
 DEFAULT_CONFIG = {
     "repos": [],                 # absolute paths of git repos to watch
     "model": "",                 # blank = Claude Code's default model
-    "daily_token_budget": 200000,
+    "daily_token_limit": 0,      # optional warning threshold for ADDGate's own usage; 0 = off
     "questions_per_close": 5,
     "hint_delay_seconds": 60,
     "review_intervals_days": [1, 3, 7, 14, 30],
+    "terminal_enabled": False,   # owner only; can only be changed through /api/terminal/enable
 }
+PROTECTED_CONFIG = {"terminal_enabled"}  # never writable through the general settings save
 
 _current_user = contextvars.ContextVar("addgate_user", default=None)
 

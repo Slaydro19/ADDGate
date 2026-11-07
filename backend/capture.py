@@ -158,17 +158,31 @@ def summarize(session):
     }
 
 
-def transcript_for_llm(sessions, max_chars=90000):
-    """Plain-text version of today's work to hand to Claude at gate close."""
+# How much of each event to send at gate close. Your prompts and Claude's reasoning carry the
+# concepts; command output and long code dumps mostly don't, so they're cut hard.
+LLM_LIMITS = {"you": 1500, "claude": 600, "run": 160, "result": 120, "edit": 200}
+
+
+def transcript_for_llm(sessions, max_chars=40000):
+    """Compact text version of today's work to hand to Claude at gate close."""
     parts = []
     for s in sessions:
-        parts.append(f"\n=== Session in {s['cwd'] or 'unknown folder'} ===")
+        parts.append(f"\n=== Session in {Path(s['cwd']).name if s['cwd'] else 'unknown folder'} ===")
+        last = None
         for e in s["events"]:
-            text = e["text"] if e["who"] in ("you", "claude") else _short(e["text"], 300)
-            parts.append(f"[{e['who']}] {text[:4000]}")
+            text = " ".join(e["text"].split())  # collapse whitespace and blank lines
+            limit = LLM_LIMITS.get(e["who"], 200)
+            if len(text) > limit:
+                text = text[:limit] + "…"
+            line = f"[{e['who']}] {text}"
+            if line == last:  # repeated edits of the same file, retried commands
+                continue
+            parts.append(line)
+            last = line
     text = "\n".join(parts)
-    if len(text) > max_chars:  # keep the most recent work
-        text = "…(earlier work trimmed)…\n" + text[-max_chars:]
+    if len(text) > max_chars:  # keep the most recent work, starting on a whole line
+        tail = text[-max_chars:]
+        text = "…(earlier work trimmed)…\n" + tail[tail.find("\n") + 1:]
     return text
 
 

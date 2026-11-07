@@ -20,7 +20,7 @@ class AuthError(Exception):
 
 def public(user):
     return {"id": user["id"], "username": user["username"], "display_name": user["display_name"],
-            "created": user["created"]}
+            "created": user["created"], "is_owner": bool(user.get("is_owner"))}
 
 
 def get(user_id):
@@ -45,8 +45,9 @@ def create(username, password, display_name=""):
     try:
         with db.write() as c:
             first = c.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
-            c.execute("INSERT INTO users (id, username, display_name, password_hash, created) "
-                      "VALUES (:id, :username, :display_name, :password_hash, :created)", user)
+            user["is_owner"] = int(first)  # first account on this Mac owns it (terminal, admin)
+            c.execute("INSERT INTO users (id, username, display_name, password_hash, created, is_owner) "
+                      "VALUES (:id, :username, :display_name, :password_hash, :created, :is_owner)", user)
     except sqlite3.IntegrityError:
         raise AuthError("That username is taken.")
     return user, first
@@ -60,6 +61,11 @@ def authenticate(username, password):
     if not check_password_hash(user["password_hash"], password or ""):
         raise AuthError("Wrong username or password.")
     return user
+
+
+def check_password(user_id, password):
+    user = get(user_id)
+    return bool(user) and check_password_hash(user["password_hash"], password or "")
 
 
 def change_password(user_id, current, new):

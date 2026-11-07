@@ -13,6 +13,9 @@ export async function api(path, { method = "GET", body } = {}) {
     if (res.status === 401 && data?.kind === "login") {
       window.dispatchEvent(new Event("addgate:signed-out"));
     }
+    if (data?.kind === "auth" || data?.kind === "missing") {  // Claude Code sign-in expired or gone
+      window.dispatchEvent(new Event("addgate:claude-lost"));
+    }
     const err = new Error((data && data.error) || `Request failed (${res.status})`);
     err.kind = data && data.kind;
     throw err;

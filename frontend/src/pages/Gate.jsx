@@ -34,10 +34,11 @@ export default function Gate({ go, refreshUsage }) {
   const nextOpen = qs.find((x, i) => i > idx && !x.result) || qs.find((x) => !x.result && x.id !== q.id);
   const done = answered.length === qs.length;
 
-  async function submit(answer) {
-    const res = await api("/gate/answer", { method: "POST", body: { question_id: q.id, answer } });
+  async function submit(payload) {
+    const res = await api("/gate/answer", { method: "POST", body: { question_id: q.id, ...payload } });
+    const { model_answer, choices, concept, ...result } = res;
     setData((d) => ({ ...d, day: { ...d.day, questions: d.day.questions.map((x) =>
-      x.id === q.id ? { ...x, answer, result: { verdict: res.verdict, feedback: res.feedback }, model_answer: res.model_answer } : x) } }));
+      x.id === q.id ? { ...x, answer: payload.answer, result, model_answer, choices: choices || x.choices } : x) } }));
     refreshUsage();
     return res;
   }

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Blocks commits that would publish secrets or personal data. ADDGate's repo is public.
+# Installed automatically by start.sh (git config core.hooksPath .githooks).
+# To bypass in a real emergency: git commit --no-verify  (don't).
+set -e
+fail=0
+files=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$files" ] && exit 0
+
+# 1. Files that should never be committed, by name
+bad_names=$(echo "$files" | grep -Ei '(^|/)(\.env(\..*)?|.*\.(db|db-wal|db-shm|sqlite3?|key|pem|p12|imported|jsonl)|secret[^/]*|credentials[^/]*|\.DS_Store|users\.json|vault\.json)$' || true)
+if [ -n "$bad_names" ]; then
+  echo "✋ pre-commit: these files look like private data or keys:"; echo "$bad_names" | sed 's/^/   /'; fail=1
+fi
+
+# 2. Secrets and personal paths inside the changes (built bundles skipped)
+# (plain grep -E only: macOS grep has no -P)
+patterns='sk-ant-[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abpr]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|AIza[0-9A-Za-z_-]{30,}|scrypt:[0-9]+:[0-9]+:[0-9]+[$]|/Users/[A-Za-z0-9._-]+/'
+added=$(git diff --cached -U0 -- $(echo "$files" | grep -v '^backend/static/assets/') | grep '^+' | grep -v '^+++' || true)
+hits=$(printf '%s\n' "$added" | grep -nE "$patterns" | grep -vE '/Users/you/' || true)
+if [ -n "$hits" ]; then
+  echo "✋ pre-commit: found what looks like a secret or a personal path:"; echo "$hits" | cut -c1-160 | sed 's/^/   /'; fail=1
+fi
+
+# 3. Big files (databases, recordings, dumps)
+for f in $files; do
+  if [ -f "$f" ] && [ "$(wc -c < "$f")" -gt 2000000 ]; then echo "✋ pre-commit: $f is over 2 MB"; fail=1; fi
+done
+
+if [ $fail = 1 ]; then
+  echo; echo "Commit blocked. Remove these with: git restore --staged <file>"; exit 1
+fi

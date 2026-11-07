@@ -1,4 +1,42 @@
+# --- ADDGate keeps ALL personal data in ~/gate, outside this repo. These rules are a second line of defense. ---
+
+# Your data, keys and databases (should never be in this folder, but just in case)
+gate/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.key
+*.pem
+*.p12
+secret*
+*.imported
+backups/
+*.jsonl
+
+# Environment files and credentials
+.env
+.env.*
+*.env
+.npmrc
+.pypirc
+credentials*
+
+# Dependencies and build caches
 .venv/
-frontend/node_modules/
+venv/
+node_modules/
 __pycache__/
+*.pyc
+
+# OS and editor clutter
 .DS_Store
+._*
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log

@@ -44,6 +44,35 @@ history, though, so they all see the same Capture sessions.
 - Forgot a password? There's no email on a local app, so reset it from Terminal:
   `cd backend && ../.venv/bin/python manage.py reset-password <username>`
 
+## Stats
+
+The **Stats** page shows your ownership rate, streak, answers per day for the last 30 days,
+the categories you borrow most, your hardest concepts and the reviews coming up this week.
+Every stats query is scoped to the signed-in account (`WHERE user_id = ?`), with the id taken
+from the server-side session, so no account can see another's numbers.
+
+## Terminal
+
+A real shell on your Mac inside ADDGate (xterm.js in the browser, a PTY on the server). Claude
+Code sessions you run there get captured like any other. It runs as your Mac user, so it is
+locked down:
+
+| Threat | Defense |
+|---|---|
+| Other ADDGate accounts on this Mac | **Owner only**: the first account created. Nobody else sees it. |
+| Someone at your unlocked browser, a stolen cookie | **Off by default**; turning it on and opening it need your password (re-confirmed every 15 min). |
+| A malicious website connecting to localhost | WebSocket needs a **single-use ticket** (30 s, tied to your account) and an exact **Origin** match, checked before the connection is accepted. |
+| DNS rebinding | Every request's **Host** must be `localhost` / `127.0.0.1`. |
+| Injected scripts (XSS would mean shell access) | Strict **Content-Security-Policy**: only ADDGate's own scripts. |
+| Clickjacking | Framing is blocked (`frame-ancestors 'none'`, `X-Frame-Options: DENY`). |
+| Password guessing | 5 wrong passwords locks that login for 5 minutes. |
+| Forgotten shells | 30-minute idle timeout, max 3 per account, closed on sign-out. |
+| Your network | The server only listens on 127.0.0.1. |
+
+Every terminal open/close, refused connection and lockout is in **Settings → Terminal and security
+log** (events only, never keystrokes). What it can't stop: someone who knows your password sitting
+at your unlocked Mac, who could open Terminal.app anyway.
+
 ## Storage
 
 Everything lives in one SQLite database, `~/gate/addgate.db`, so there's no database server
@@ -54,7 +83,7 @@ to install. It runs in WAL mode, and every change is a short transaction, so par
 cd backend
 ../.venv/bin/python manage.py users            # list accounts
 ../.venv/bin/python manage.py backup           # safe copy to ~/gate/backups/, even while running
-../.venv/bin/python manage.py reset-password jalen
+../.venv/bin/python manage.py reset-password <username>
 sqlite3 ~/gate/addgate.db ".tables"            # poke around (read-only is safest)
 ```
 
@@ -66,11 +95,28 @@ with an `.imported` suffix. Nothing is deleted. Files from the May CLI are left 
 
 1. Leave ADDGate open and work in Claude Code as usual. Sessions show up on **Capture**.
 2. When you're done, click **Close gate & quiz me**. Claude takes about 30–60 seconds to read your day.
-3. Answer each question in your own words. The hint unlocks after 60 seconds.
+3. Pick an answer, say how sure you are, and explain **why** in your own words. The why is
+   what gets graded: a right pick with no real reasoning counts as partial. The hint unlocks
+   after 60 seconds.
 4. Come back the next day: anything you didn't own shows up in **Review** with a different
    scenario. Missing it twice puts it in **relearn**, which starts with a short lesson.
 
 Owned concepts come back at 1, 3, 7, 14 and 30 days.
+
+## Honesty, not policing
+
+ADDGate can't stop you from pasting a question into another AI, and it doesn't try. It's not an
+exam, so the only person cheating hurts is you. Instead it makes honesty easy and keeps a record:
+
+- **I looked it up**: no penalty, the concept just comes back tomorrow.
+- **Signals, not blocks**: pasting an explanation, typing faster than a person can, or saying
+  you were guessing caps that answer at *partial*. Leaving the tab is only noted.
+- **Did it hold?** Concepts you owned the first time get asked again in new scenarios. Stats
+  shows how many held up, and the Vault marks the ones that didn't. That's the number a
+  screenshot can't fake.
+
+Gate questions are multiple choice plus a why. The wrong choices are real misconceptions, so a
+wrong pick tells you exactly what you misunderstood. Reviews switch to open recall, which is harder.
 
 ## Where things live
 
@@ -84,18 +130,20 @@ Owned concepts come back at 1, 3, 7, 14 and 30 days.
 
 ## Usage meter
 
-The meter counts tokens from **ADDGate's own** Claude calls against the daily budget you set.
-It isn't your Claude plan's remaining quota, because there's no supported way to read that. If
-Claude returns a usage-limit error, the meter turns red and shows the reset message.
+The top bar shows **ADDGate's own** Claude calls today and roughly how many tokens they used.
+Cached instructions that Claude Code re-reads on every call are left out, because they count
+far less toward your plan. It is **not** your plan's remaining quota; that's in Claude under
+Settings, then Usage. You can set an optional warning threshold in Settings. Connection checks
+only call Claude on startup, when you press Refresh, or after a call fails to sign in.
 
 ## Developing
 
 ```bash
-# terminal 1: API
-cd backend && ../.venv/bin/python app.py
-# terminal 2: UI with hot reload on http://localhost:5173
-cd frontend && npm install && npm run dev
+./dev.sh    # API with auto-reload on :5055 + UI with hot reload on http://localhost:5173
 ```
+
+ADDGate runs on **gunicorn** with one worker and many threads (`start.sh`). Keep it at one worker:
+terminal tickets and sessions live in that process's memory.
 
 `npm run build` writes the UI into `backend/static`. Prompts live in `backend/prompts.py`, and
 that's the first place to tune if the questions feel off.

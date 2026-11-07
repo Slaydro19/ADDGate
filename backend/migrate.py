@@ -17,7 +17,7 @@ from config import GATE_HOME, read_json
 log = logging.getLogger("addgate.migrate")
 STATUSES = {"new", "owned", "partial", "borrowed", "relearn"}
 VERDICTS = {"owned", "partial", "borrowed"}
-CONFIG_KEYS = {"repos", "model", "daily_token_budget", "questions_per_close", "hint_delay_seconds",
+CONFIG_KEYS = {"repos", "model", "questions_per_close", "hint_delay_seconds",
                "review_intervals_days"}
 
 

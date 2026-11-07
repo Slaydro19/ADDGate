@@ -8,24 +8,30 @@ import Gate from "./pages/Gate.jsx";
 import Review from "./pages/Review.jsx";
 import Vault from "./pages/Vault.jsx";
 import Settings from "./pages/Settings.jsx";
+import Stats from "./pages/Stats.jsx";
+import TerminalPage from "./pages/Terminal.jsx";
 
-const PAGES = { capture: "Capture", gate: "Gate", review: "Review", vault: "Vault", settings: "Settings" };
+const PAGES = { capture: "Capture", gate: "Gate", review: "Review", vault: "Vault", stats: "Stats", terminal: "Terminal", settings: "Settings" };
+const OWNER_ONLY = new Set(["terminal"]);
 const pageFromHash = () => (location.hash.slice(1) in PAGES ? location.hash.slice(1) : "capture");
 
 function UsageMeter({ usage }) {
   if (!usage) return null;
-  const pct = Math.min(100, usage.percent);
-  const label = usage.level === "red" ? "Claude limit reached"
-    : usage.level === "amber" ? "Heavy ADDGate usage today" : "ADDGate usage today";
+  const k = (n) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : `${n}`);
+  const label = usage.level === "red" ? "Claude limit reached" : "ADDGate today";
+  const title = usage.limit_message
+    || "ADDGate's own Claude calls today (cached instructions not counted). Your real plan usage is in Claude: Settings → Usage.";
   return (
-    <div className={`meter ${usage.level}`} title={usage.limit_message || `${usage.calls} Claude calls today`}>
+    <div className={`meter ${usage.level}`} title={title}>
       <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
         <span>{label}</span>
-        <span className="mono">{Math.round(usage.tokens / 1000)}k / {Math.round(usage.budget / 1000)}k</span>
+        <span className="mono">{usage.calls} call{usage.calls === 1 ? "" : "s"} · ~{k(usage.tokens)} tokens</span>
       </div>
-      <div className="bar" role="img" aria-label={`${pct}% of daily token budget`}>
-        <div className="fill" style={{ width: `${usage.level === "red" ? 100 : pct}%` }} />
-      </div>
+      {(usage.limit > 0 || usage.level === "red") && (
+        <div className="bar" role="img" aria-label={usage.level === "red" ? "Claude limit reached" : `${usage.percent}% of your ${k(usage.limit)} token warning`}>
+          <div className="fill" style={{ width: `${usage.level === "red" ? 100 : Math.min(100, usage.percent)}%` }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -89,6 +95,11 @@ export default function App() {
   }, []);
   useEffect(() => { if (signedIn) checkConn(); }, [signedIn, checkConn]);
   useEffect(() => {
+    const lost = () => checkConn(false);  // server already knows it's disconnected; this costs nothing
+    addEventListener("addgate:claude-lost", lost);
+    return () => removeEventListener("addgate:claude-lost", lost);
+  }, [checkConn]);
+  useEffect(() => {
     const onHash = () => setPage(pageFromHash());
     addEventListener("hashchange", onHash);
     return () => removeEventListener("hashchange", onHash);
@@ -119,7 +130,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand"><Logo /> ADDGate</div>
         <nav className="nav" aria-label="Main">
-          {Object.entries(PAGES).map(([key, label]) => (
+          {Object.entries(PAGES).filter(([key]) => !OWNER_ONLY.has(key) || auth.user.is_owner).map(([key, label]) => (
             <button key={key} className={page === key ? "on" : ""} aria-current={page === key ? "page" : undefined}
               onClick={() => go(key)}>
               {label}{key === "review" && dueCount > 0 && <span className="count">{dueCount}</span>}
@@ -141,6 +152,8 @@ export default function App() {
       {page === "gate" && <Gate {...props} />}
       {page === "review" && <Review {...props} />}
       {page === "vault" && <Vault {...props} />}
+      {page === "stats" && <Stats {...props} />}
+      {page === "terminal" && <TerminalPage {...props} />}
       {page === "settings" && <Settings {...props} />}
     </>
   );

@@ -44,7 +44,7 @@ export default function Auth({ hasUsers, onSignedIn }) {
         {signup && (
           <div className="field">
             <label htmlFor="dn">Name <span className="faint">(optional)</span></label>
-            <input id="dn" type="text" autoComplete="name" value={form.display_name} onChange={set("display_name")} placeholder="e.g. Jalen" />
+            <input id="dn" type="text" autoComplete="name" value={form.display_name} onChange={set("display_name")} placeholder="e.g. Sam" />
           </div>
         )}
         <div className="field">
