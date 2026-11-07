@@ -1,14 +1,23 @@
-import React from "react";
-import { Logo, Spinner } from "../icons.jsx";
+import React, { useEffect } from "react";
+import { Logo, Refresh, Spinner } from "../icons.jsx";
 
 const HELP = {
   missing: <>Install Claude Code, then make sure <code>claude</code> runs in your terminal.</>,
-  auth: <>Open a terminal, run <code>claude</code>, and sign in with your Claude account. Then retry.</>,
+  auth: <>Open a terminal, run <code>claude</code>, and sign in with your Claude account. Then refresh.</>,
   limit: <>You've hit your Claude usage limit. ADDGate will work again once it resets.</>,
+  timeout: <>Claude Code didn't answer in time. Check that <code>claude -p "hi"</code> works in your terminal, then refresh.</>,
 };
 
 export default function Connect({ conn, onRetry }) {
   const checking = !conn || conn.checking;
+
+  // Keep re-checking quietly every 15s while disconnected, so signing in elsewhere just works.
+  useEffect(() => {
+    if (checking) return;
+    const id = setTimeout(onRetry, 15000);
+    return () => clearTimeout(id);
+  }, [checking, conn?.checkedAt, onRetry]);
+
   return (
     <div className="center">
       <div className="card">
@@ -29,9 +38,20 @@ export default function Connect({ conn, onRetry }) {
             </div>
           </div>
         )}
-        <button className="btn primary" onClick={onRetry} disabled={checking}>
-          {checking ? "Checking…" : "Connect Claude Code"}
-        </button>
+        <div className="row">
+          <button className="btn primary" style={{ flex: 1 }} onClick={onRetry} disabled={checking}>
+            {checking ? "Checking…" : "Connect Claude Code"}
+          </button>
+          <button className="btn" onClick={onRetry} disabled={checking} aria-label="Refresh connection status">
+            <Refresh spinning={checking} /> Refresh
+          </button>
+        </div>
+        {!checking && conn?.checkedAt && (
+          <div className="muted" style={{ fontSize: 13 }}>
+            Last checked {new Date(conn.checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}
+            {" "}· checking again automatically
+          </div>
+        )}
       </div>
     </div>
   );

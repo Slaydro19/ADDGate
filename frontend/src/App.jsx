@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { api } from "./api.js";
-import { Logo } from "./icons.jsx";
+import { Logo, Refresh } from "./icons.jsx";
 import Connect from "./pages/Connect.jsx";
 import Capture from "./pages/Capture.jsx";
 import Gate from "./pages/Gate.jsx";
@@ -36,9 +36,9 @@ export default function App() {
   const [dueCount, setDueCount] = useState(0);
 
   const checkConn = useCallback(async (refresh = false) => {
-    setConn((c) => (c ? { ...c, checking: true } : { checking: true }));
-    try { setConn(await api(`/status${refresh ? "?refresh=1" : ""}`)); }
-    catch (e) { setConn({ connected: false, message: e.message }); }
+    setConn((c) => (c ? { ...c, checking: true, wasConnected: !!c.connected } : { checking: true }));
+    try { setConn({ ...(await api(`/status${refresh ? "?refresh=1" : ""}`)), checkedAt: Date.now() }); }
+    catch (e) { setConn({ connected: false, message: e.message, checkedAt: Date.now() }); }
   }, []);
 
   const refreshUsage = useCallback(() => {
@@ -61,7 +61,8 @@ export default function App() {
 
   const go = (p) => { location.hash = p; setPage(p); refreshUsage(); };
 
-  if (!conn || !conn.connected) return <Connect conn={conn} onRetry={() => checkConn(true)} />;
+  const retry = useCallback(() => checkConn(true), [checkConn]);
+  if (!conn || (!conn.connected && !(conn.checking && conn.wasConnected))) return <Connect conn={conn} onRetry={retry} />;
 
   const props = { go, refreshUsage };
   return (
@@ -78,7 +79,12 @@ export default function App() {
         </nav>
         <div className="topright">
           <UsageMeter usage={usage} />
-          <span className="pill ok"><span className="dot" aria-hidden="true" />Connected via Claude Code</span>
+          <button className="pill ok" style={{ border: 0, cursor: "pointer" }} onClick={retry} disabled={conn.checking}
+            title="Re-check the Claude Code connection">
+            <span className="dot" aria-hidden="true" />
+            {conn.checking ? "Checking…" : "Connected via Claude Code"}
+            <Refresh spinning={conn.checking} size={14} />
+          </button>
         </div>
       </header>
       {page === "capture" && <Capture {...props} />}

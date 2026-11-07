@@ -19,4 +19,10 @@ export const Info = () => (
 export const Check = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" {...base}><path d="m5 12 5 5 9-10" /></svg>
 );
-export const Spinner = () => <span className="spinner" aria-hidden="true" />;
+export const Refresh = ({ spinning = false, size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" {...base}
+    style={spinning ? { animation: "spin .8s linear infinite" } : undefined}>
+    <path d="M20 11a8 8 0 0 0-14.9-3.5M4 4v4h4" /><path d="M4 13a8 8 0 0 0 14.9 3.5M20 20v-4h-4" />
+  </svg>
+);
+export const Spinner =() => <span className="spinner" aria-hidden="true" />;
