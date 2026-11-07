@@ -32,6 +32,36 @@ Then, in the app:
    which also works.
 2. **Settings → Git repos.** Add the repos you work in so commits count too.
 
+## Accounts
+
+The first screen asks you to create an account. Each account has its own quizzes, vault,
+review schedule and settings. Everyone shares the Mac's Claude Code sign-in and its session
+history, though, so they all see the same Capture sessions.
+
+- Passwords are hashed with scrypt. Sign-in uses an HttpOnly, SameSite=Strict cookie, and
+  every API route except sign-in requires it.
+- The **first** account created adopts any ADDGate data from before accounts existed.
+- Forgot a password? There's no email on a local app, so reset it from Terminal:
+  `cd backend && ../.venv/bin/python manage.py reset-password <username>`
+
+## Storage
+
+Everything lives in one SQLite database, `~/gate/addgate.db`, so there's no database server
+to install. It runs in WAL mode, and every change is a short transaction, so parallel requests
+(two tabs, a gate answer during a review) can't overwrite each other.
+
+```bash
+cd backend
+../.venv/bin/python manage.py users            # list accounts
+../.venv/bin/python manage.py backup           # safe copy to ~/gate/backups/, even while running
+../.venv/bin/python manage.py reset-password jalen
+sqlite3 ~/gate/addgate.db ".tables"            # poke around (read-only is safest)
+```
+
+Upgrading from an older version? On first start, ADDGate imports the old JSON files
+(`users.json`, `vault.json`, `days/`, `usage.json`) into the database and renames each one
+with an `.imported` suffix. Nothing is deleted. Files from the May CLI are left alone.
+
 ## Daily use
 
 1. Leave ADDGate open and work in Claude Code as usual. Sessions show up on **Capture**.
@@ -40,18 +70,16 @@ Then, in the app:
 4. Come back the next day: anything you didn't own shows up in **Review** with a different
    scenario. Missing it twice puts it in **relearn**, which starts with a short lesson.
 
-Owned concepts come back at 1, 3, 7, 14 and 30 days. You can change the intervals in `~/gate/config.json`.
+Owned concepts come back at 1, 3, 7, 14 and 30 days.
 
 ## Where things live
 
 ```
-~/gate/
-├── config.json      repos, budget, questions per close, hint delay, model
-├── state.json       gate open/closed
-├── sessions/        Stop hook index, one file per day
-├── days/            each day's questions and your answers
-├── vault.json       every concept, its status and review schedule
-└── usage.json       tokens ADDGate used per day (for the meter)
+~/gate/                (owner-only)
+├── addgate.db         accounts, settings, gate state, concepts, attempts, quizzes, usage
+├── secret.key         signs sign-in cookies
+├── sessions/          Stop hook index, one file per day
+└── backups/           from manage.py backup
 ```
 
 ## Usage meter

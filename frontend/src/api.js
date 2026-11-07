@@ -1,12 +1,18 @@
 export async function api(path, { method = "GET", body } = {}) {
+  const send = method !== "GET";
   const res = await fetch(`/api${path}`, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
+    credentials: "same-origin",
+    // The server only accepts JSON for writes (blocks cross-site form posts), so always send JSON.
+    headers: send ? { "Content-Type": "application/json" } : undefined,
+    body: send ? JSON.stringify(body || {}) : undefined,
   });
   let data = null;
   try { data = await res.json(); } catch { /* non-JSON */ }
   if (!res.ok) {
+    if (res.status === 401 && data?.kind === "login") {
+      window.dispatchEvent(new Event("addgate:signed-out"));
+    }
     const err = new Error((data && data.error) || `Request failed (${res.status})`);
     err.kind = data && data.kind;
     throw err;

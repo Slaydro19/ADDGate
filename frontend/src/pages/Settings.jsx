@@ -2,7 +2,40 @@ import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { Check, Info, Spinner } from "../icons.jsx";
 
-export default function Settings() {
+function PasswordForm() {
+  const [f, setF] = useState({ current: "", new: "", confirm: "" });
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => { setMsg(null); setF({ ...f, [k]: e.target.value }); };
+  async function submit(e) {
+    e.preventDefault();
+    if (f.new !== f.confirm) { setMsg({ bad: true, text: "New passwords don't match." }); return; }
+    setBusy(true);
+    try {
+      await api("/auth/password", { method: "POST", body: { current: f.current, new: f.new } });
+      setF({ current: "", new: "", confirm: "" }); setMsg({ text: "Password changed." });
+    } catch (err) { setMsg({ bad: true, text: err.message }); }
+    finally { setBusy(false); }
+  }
+  return (
+    <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="cols" style={{ gap: 12 }}>
+        <div className="field" style={{ flex: "1 1 180px" }}><label htmlFor="cp">Current password</label>
+          <input id="cp" type="password" autoComplete="current-password" value={f.current} onChange={set("current")} /></div>
+        <div className="field" style={{ flex: "1 1 180px" }}><label htmlFor="np">New password</label>
+          <input id="np" type="password" autoComplete="new-password" value={f.new} onChange={set("new")} /></div>
+        <div className="field" style={{ flex: "1 1 180px" }}><label htmlFor="np2">Confirm new</label>
+          <input id="np2" type="password" autoComplete="new-password" value={f.confirm} onChange={set("confirm")} /></div>
+      </div>
+      <div className="row">
+        <button className="btn" type="submit" disabled={busy || !f.current || !f.new}>Change password</button>
+        {msg && <span role="status" style={{ color: msg.bad ? "var(--red)" : "var(--green-text)" }}>{msg.text}</span>}
+      </div>
+    </form>
+  );
+}
+
+export default function Settings({ user }) {
   const [cfg, setCfg] = useState(null);
   const [repos, setRepos] = useState("");
   const [saved, setSaved] = useState(false);
@@ -31,7 +64,16 @@ export default function Settings() {
   return (
     <main style={{ maxWidth: 760 }}>
       <section className="hero"><div><div className="eyebrow">Settings</div><h1>Setup</h1>
-        <p className="sub">Saved to ~/gate/config.json.</p></div></section>
+        <p className="sub">These settings are just for your account.</p></div></section>
+
+      <section className="panel">
+        <h2>Account</h2>
+        <div className="row" style={{ gap: 12 }}>
+          <span className="avatar" aria-hidden="true">{user.display_name[0].toUpperCase()}</span>
+          <div><div style={{ fontWeight: 600 }}>{user.display_name}</div><div className="faint">@{user.username}</div></div>
+        </div>
+        <PasswordForm />
+      </section>
 
       <section className="panel">
         <h2>Claude Code Stop hook</h2>

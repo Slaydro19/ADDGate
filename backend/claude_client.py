@@ -7,7 +7,8 @@ import shutil
 import subprocess
 from datetime import date
 
-from config import RUNNER_DIR, USAGE_FILE, load_config, read_json, write_json
+import db
+from config import RUNNER_DIR, load_config
 
 
 class ClaudeError(Exception):
@@ -29,23 +30,19 @@ def _record_usage(payload):
     tokens = sum(int(usage.get(k) or 0) for k in (
         "input_tokens", "output_tokens",
         "cache_creation_input_tokens", "cache_read_input_tokens"))
-    data = read_json(USAGE_FILE, {})
-    today = date.today().isoformat()
-    day = data.get(today, {"tokens": 0, "calls": 0, "cost_usd": 0.0})
-    day["tokens"] += tokens
-    day["calls"] += 1
-    day["cost_usd"] = round(day["cost_usd"] + float(payload.get("total_cost_usd") or 0), 4)
-    data[today] = day
-    write_json(USAGE_FILE, data)
+    cost = float(payload.get("total_cost_usd") or 0)
+    with db.write() as c:  # one statement, so parallel calls add up instead of overwriting
+        c.execute("INSERT INTO usage (day, tokens, calls, cost_usd) VALUES (?, ?, 1, ?) "
+                  "ON CONFLICT(day) DO UPDATE SET tokens = tokens + excluded.tokens, "
+                  "calls = calls + 1, cost_usd = cost_usd + excluded.cost_usd",
+                  (date.today().isoformat(), tokens, cost))
 
 
 def note_limit_hit(message):
-    data = read_json(USAGE_FILE, {})
-    today = date.today().isoformat()
-    day = data.get(today, {"tokens": 0, "calls": 0, "cost_usd": 0.0})
-    day["limit_message"] = message[:300]
-    data[today] = day
-    write_json(USAGE_FILE, data)
+    with db.write() as c:
+        c.execute("INSERT INTO usage (day, limit_message) VALUES (?, ?) "
+                  "ON CONFLICT(day) DO UPDATE SET limit_message = excluded.limit_message",
+                  (date.today().isoformat(), message[:300]))
 
 
 def ask(instructions, data_text="", timeout=240):
@@ -130,8 +127,11 @@ def check_connection():
 
 def usage_today():
     cfg = load_config()
-    day = read_json(USAGE_FILE, {}).get(date.today().isoformat(),
-                                        {"tokens": 0, "calls": 0, "cost_usd": 0.0})
+    day = db.one("SELECT tokens, calls, cost_usd, limit_message FROM usage WHERE day = ?",
+                 (date.today().isoformat(),)) or {"tokens": 0, "calls": 0, "cost_usd": 0.0}
+    day["cost_usd"] = round(day["cost_usd"], 4)
+    if not day.get("limit_message"):
+        day.pop("limit_message", None)
     budget = int(cfg.get("daily_token_budget") or 0)
     pct = round(100 * day["tokens"] / budget, 1) if budget else 0
     level = "red" if day.get("limit_message") else "amber" if pct >= 80 else "ok"

@@ -1,20 +1,67 @@
 """ADDGate local server. Serves the API on /api and the built React app on /.
 Binds to 127.0.0.1 only: nothing is reachable from other machines."""
 import os
+import secrets
 import time
+from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session
 
 import capture
+import db
+import migrate
 import claude_client as cc
 import gate
 import hook_install
-from config import ensure_dirs, load_config, save_config, DEFAULT_CONFIG
+import users
+from config import DEFAULT_CONFIG, SECRET_FILE, ensure_dirs, load_config, save_config, use_user
 
 STATIC = Path(__file__).parent / "static"
+PUBLIC_API = {"/api/status", "/api/auth/me", "/api/auth/login", "/api/auth/signup", "/api/auth/logout"}
+
+
+def secret_key():
+    ensure_dirs()
+    if not SECRET_FILE.exists():
+        SECRET_FILE.write_text(secrets.token_hex(32))
+        SECRET_FILE.chmod(0o600)
+    return SECRET_FILE.read_text().strip()
+
+
+ensure_dirs()
+db.init()
+migrate.run()  # one-time import of older JSON files; does nothing once they're imported
+
 app = Flask(__name__, static_folder=None)
+app.config.update(
+    SECRET_KEY=secret_key(),
+    SESSION_COOKIE_NAME="addgate_session",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Strict",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
 _conn_cache = {"at": 0, "value": None}
+
+
+# ---------- request guards ----------
+
+@app.before_request
+def guard():
+    use_user(None)
+    if not request.path.startswith("/api/"):
+        return None
+    # Blocks cross-site form posts: browsers can't send JSON cross-origin without a CORS preflight.
+    if request.method in ("POST", "PUT", "DELETE") and not request.is_json:
+        return jsonify(error="Requests must be JSON.", kind="bad_request"), 415
+    uid = session.get("uid")
+    user = users.get(uid) if uid else None
+    if user:
+        use_user(user["id"])
+    elif request.path not in PUBLIC_API:
+        session.clear()
+        return jsonify(error="Please sign in.", kind="login"), 401
+    return None
 
 
 @app.errorhandler(cc.ClaudeError)
@@ -23,10 +70,65 @@ def claude_error(e):
     return jsonify(error=str(e), kind=e.kind), code
 
 
+@app.errorhandler(users.AuthError)
+def auth_error(e):
+    return jsonify(error=str(e), kind="auth_form"), 400
+
+
 @app.errorhandler(KeyError)
 def not_found(e):
     return jsonify(error=str(e).strip("'")), 404
 
+
+def body():
+    return request.get_json(silent=True) or {}
+
+
+# ---------- accounts ----------
+
+@app.get("/api/auth/me")
+def me():
+    uid = session.get("uid")
+    user = users.get(uid) if uid else None
+    return jsonify(user=users.public(user) if user else None, has_users=users.has_users())
+
+
+@app.post("/api/auth/signup")
+def signup():
+    b = body()
+    user, first = users.create(b.get("username"), b.get("password"), b.get("display_name"))
+    if first:
+        migrate.adopt_legacy(user["id"])
+    session.clear()
+    session.permanent = True
+    session["uid"] = user["id"]
+    return jsonify(user=users.public(user))
+
+
+@app.post("/api/auth/login")
+def login():
+    b = body()
+    user = users.authenticate(b.get("username"), b.get("password"))
+    session.clear()
+    session.permanent = bool(b.get("remember", True))
+    session["uid"] = user["id"]
+    return jsonify(user=users.public(user))
+
+
+@app.post("/api/auth/logout")
+def logout():
+    session.clear()
+    return jsonify(ok=True)
+
+
+@app.post("/api/auth/password")
+def password():
+    b = body()
+    users.change_password(session["uid"], b.get("current"), b.get("new"))
+    return jsonify(ok=True)
+
+
+# ---------- Claude connection + usage (shared by the whole machine) ----------
 
 @app.get("/api/status")
 def status():
@@ -40,6 +142,8 @@ def status():
 def usage():
     return jsonify(cc.usage_today())
 
+
+# ---------- capture + gate ----------
 
 @app.get("/api/capture")
 def capture_view():
@@ -75,8 +179,8 @@ def gate_today():
 
 @app.post("/api/gate/answer")
 def gate_answer():
-    body = request.get_json(force=True)
-    return jsonify(gate.answer_gate(body["question_id"], body.get("answer", "")))
+    b = body()
+    return jsonify(gate.answer_gate(b["question_id"], b.get("answer", "")))
 
 
 @app.get("/api/review")
@@ -93,8 +197,7 @@ def review_question(cid):
 
 @app.post("/api/review/<cid>/answer")
 def review_answer(cid):
-    body = request.get_json(force=True)
-    return jsonify(gate.answer_review(cid, body.get("answer", "")))
+    return jsonify(gate.answer_review(cid, body().get("answer", "")))
 
 
 @app.get("/api/vault")
@@ -112,11 +215,11 @@ def get_config():
 
 @app.put("/api/config")
 def put_config():
-    body = request.get_json(force=True)
+    b = body()
     cfg = load_config()
     for key in DEFAULT_CONFIG:
-        if key in body:
-            cfg[key] = body[key]
+        if key in b:
+            cfg[key] = b[key]
     cfg["repos"] = [str(Path(r).expanduser()) for r in cfg.get("repos", []) if str(r).strip()]
     save_config(cfg)
     return jsonify(cfg)
@@ -126,6 +229,8 @@ def put_config():
 def hook_install_route():
     return jsonify(hook_install.install())
 
+
+# ---------- front end ----------
 
 @app.get("/", defaults={"path": ""})
 @app.get("/<path:path>")
@@ -140,7 +245,6 @@ def spa(path):
 
 
 if __name__ == "__main__":
-    ensure_dirs()
     port = int(os.environ.get("ADDGATE_PORT", 5055))
     print(f"ADDGate running at http://localhost:{port}")
     app.run(host="127.0.0.1", port=port, debug=False, threaded=True)
