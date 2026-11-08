@@ -41,8 +41,14 @@ export default function Capture({ go, refreshUsage }) {
           {closed
             ? <div className="eyebrow">Gate closed at {fmtTime(data.gate.closed_at)}</div>
             : <div className="eyebrow green">Gate open · recording since {fmtTime(data.gate.opened_at)}</div>}
-          <h1>{sessions.length === 0 ? "Nothing captured yet today."
-            : `Today you worked on ${sessions.length} thing${sessions.length > 1 ? "s" : ""} with Claude.`}</h1>
+          <h1>{(() => {
+            const withClaude = sessions.filter((x) => x.kind !== "shell").length;
+            const typed = sessions.filter((x) => x.kind === "shell").reduce((n, x) => n + x.commands, 0);
+            if (!withClaude && !typed) return "Nothing captured yet today.";
+            const a = withClaude ? `${withClaude} thing${withClaude > 1 ? "s" : ""} with Claude` : "";
+            const b = typed ? `${typed} command${typed > 1 ? "s" : ""} on your own` : "";
+            return `Today you worked on ${[a, b].filter(Boolean).join(" and ran ")}.`.replace("worked on " + b, "ran " + b);
+          })()}</h1>
           <p className="sub">{closed
             ? "Work since the gate closed isn't quizzed until you open it again."
             : "Close the gate when you're done to get quizzed on what you built."}</p>
@@ -87,6 +93,19 @@ export default function Capture({ go, refreshUsage }) {
             <span className="mono muted">
               {data.commits.filter((c) => c.hash).length} commits today</span>
           </div>
+          {data.shell && (
+            <div className="item">
+              <div className="top"><span style={{ fontWeight: 500 }}>Shell</span>
+                <span className="mono" style={{ color: data.shell.enabled ? "var(--green)" : "var(--muted)" }}>
+                  {data.shell.enabled ? `● ${data.shell.today} today` : "○ off"}</span></div>
+              <span className="mono muted">{data.shell.enabled
+                ? (data.shell.folders.length ? `in ${data.shell.folders.length} folder${data.shell.folders.length > 1 ? "s" : ""}` : "no folders chosen yet")
+                : "commands you type yourself"}</span>
+              {!data.shell.enabled && (
+                <button className="btn small" style={{ marginTop: 8 }} onClick={() => go("settings")}>Set up shell capture</button>
+              )}
+            </div>
+          )}
           <button className="btn small" onClick={() => go("settings")}>Manage repos</button>
         </section>
 
@@ -106,10 +125,13 @@ export default function Capture({ go, refreshUsage }) {
                 <span className="row" style={{ justifyContent: "space-between" }}>
                   <span className="title">{s.title}</span>
                   <span className="muted" style={{ fontSize: 13 }}>
-                    {s.minutes} min · {s.files.length} file{s.files.length === 1 ? "" : "s"}
+                    {s.kind === "shell"
+                      ? <>{s.minutes} min · {s.commands} command{s.commands === 1 ? "" : "s"}{s.failed ? ` · ${s.failed} failed` : ""}</>
+                      : <>{s.minutes} min · {s.files.length} file{s.files.length === 1 ? "" : "s"}</>}
                     {!s.after_open && " · already quizzed"}</span>
                 </span>
                 <span className="tags">
+                  {s.kind === "shell" && <span className="tag typed">you typed</span>}
                   {s.project && <span className="tag">{s.project}</span>}
                   {s.files.slice(0, 4).map((f) => <span key={f} className="tag">{f}</span>)}
                 </span>
@@ -126,7 +148,7 @@ export default function Capture({ go, refreshUsage }) {
               <div className="log" aria-live="polite">
                 {active.log.map((l, i) => (
                   <div key={i}><span className="t">{l.t}</span>
-                    <span className={`who-${l.who}`}>{l.who === "you" || l.who === "claude" ? `${l.who}: ` : ""}{l.text}</span></div>
+                    <span className={`who-${l.who}${l.exit ? " failed" : ""}`}>{l.who === "you" || l.who === "claude" ? `${l.who}: ` : ""}{l.text}</span></div>
                 ))}
               </div>
               <div className="muted" style={{ fontSize: 13 }}>Updates every few seconds while you work.</div>

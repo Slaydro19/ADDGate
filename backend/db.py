@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from config import GATE_HOME
 
 DB_FILE = GATE_HOME / "addgate.db"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 _local = threading.local()
 
 SCHEMA = """
@@ -138,6 +138,21 @@ MIGRATIONS = {
             detail  TEXT
         )""",
         "CREATE INDEX IF NOT EXISTS audit_at ON audit (at)",
+    ],
+    4: [
+        # commands you typed yourself (owner only), already redacted
+        """CREATE TABLE IF NOT EXISTS shell_commands (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            started_at TEXT NOT NULL,
+            ended_at   TEXT NOT NULL,
+            exit_code  INTEGER,
+            cwd        TEXT NOT NULL,
+            source     TEXT NOT NULL CHECK (source IN ('terminal', 'shell')),
+            command    TEXT NOT NULL,
+            redacted   INTEGER NOT NULL DEFAULT 0
+        )""",
+        "CREATE INDEX IF NOT EXISTS shell_commands_time ON shell_commands (user_id, started_at)",
     ],
 }
 

@@ -9,6 +9,7 @@ import uuid
 from datetime import date, datetime, timedelta
 
 import capture
+import shell_capture
 import claude_client as cc
 import db
 import prompts
@@ -177,20 +178,23 @@ def close_gate():
     sessions = capture.sessions_today(since=since)
     commits = capture.git_commits(since=since)
     real_commits = [c for c in commits if "hash" in c]
-    if not sessions and not real_commits:
+    shell_capture.ingest()
+    typed = shell_capture.commands_since(uid, st["opened_at"]) if shell_capture.owner_id() == uid else []
+    if not sessions and not real_commits and not typed:
         raise cc.ClaudeError("Nothing captured since the gate opened. Do some work with Claude Code first.",
                              "empty")
 
     cfg = load_config()
     known_rows = db.all_rows("SELECT name FROM concepts WHERE user_id = ? ORDER BY name LIMIT 80", (uid,))
     known = ", ".join(r["name"] for r in known_rows) or "none yet"
-    data = capture.transcript_for_llm(sessions) + capture.commits_for_llm(commits)
+    data = capture.transcript_for_llm(sessions) + capture.commits_for_llm(commits) + shell_capture.for_llm(typed)
     # Slow part, outside any transaction:
     reply = cc.ask_json(prompts.CLOSE.format(n=cfg["questions_per_close"], known=known), data)
     concepts = reply.get("concepts", []) if isinstance(reply, dict) else reply
 
     stamp, day = now().isoformat(), date.today().isoformat()
-    titles = [capture.summarize(s)["title"] for s in sessions]
+    titles = [capture.summarize(s)["title"] for s in sessions] + \
+             [shell_capture.summarize_block(b)["title"] for b in shell_capture.blocks(typed)]
     with db.write() as c:
         existing = c.execute("SELECT sessions, commits FROM days WHERE user_id = ? AND day = ?", (uid, day)).fetchone()
         all_titles = (db.loads(existing["sessions"], []) if existing else []) + titles

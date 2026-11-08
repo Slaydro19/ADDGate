@@ -55,9 +55,35 @@ def redeem_ticket(ticket, uid):
     return bool(rec) and rec["uid"] == uid and rec["expires"] >= time.time()
 
 
-def _shell_env():
+HOOK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hooks", "shell_capture.zsh")
+
+
+def _zsh_integration_dir():
+    """A ZDOTDIR whose startup files load YOUR normal zsh files first, then ADDGate's capture
+    hook (the same technique VS Code uses for its shell integration). Your dotfiles aren't touched."""
+    from config import GATE_HOME
+    d = GATE_HOME / "zsh-integration"
+    d.mkdir(parents=True, exist_ok=True)
+    user = '"${ADDGATE_USER_ZDOTDIR:-$HOME}"'
+    files = {
+        ".zshenv": f'[[ -f {user}/.zshenv ]] && source {user}/.zshenv\n',
+        ".zprofile": f'[[ -f {user}/.zprofile ]] && source {user}/.zprofile\n',
+        ".zshrc": (f'[[ -f {user}/.zshrc ]] && source {user}/.zshrc\n'
+                   f'source "{HOOK_FILE}"\n'
+                   f'ZDOTDIR={user}  # so .zlogin and anything later come from your own folder\n'),
+    }
+    for name, body in files.items():
+        (d / name).write_text("# Written by ADDGate. Loads your own zsh files, then shell capture.\n" + body)
+    return str(d)
+
+
+def _shell_env(shell):
+    from config import GATE_HOME
     env = {k: v for k, v in os.environ.items() if not k.startswith(SCRUB_PREFIXES)}
-    env.update(TERM="xterm-256color", COLORTERM="truecolor", ADDGATE_TERMINAL="1")
+    env.update(TERM="xterm-256color", COLORTERM="truecolor", ADDGATE_TERMINAL="1", ADDGATE_HOME=str(GATE_HOME))
+    if os.path.basename(shell) == "zsh":
+        env["ADDGATE_USER_ZDOTDIR"] = os.environ.get("ZDOTDIR") or os.path.expanduser("~")
+        env["ZDOTDIR"] = _zsh_integration_dir()
     return env
 
 
@@ -71,11 +97,12 @@ class Session:
         shell = os.environ.get("SHELL") or "/bin/zsh"
         if not os.path.exists(shell):
             shell = "/bin/bash"
+        env = _shell_env(shell)
         pid, fd = pty.fork()
         if pid == 0:  # child: become the shell
             try:
                 os.chdir(os.path.expanduser("~"))
-                os.execvpe(shell, [shell, "-l"], _shell_env())
+                os.execvpe(shell, [shell, "-l"], env)
             finally:
                 os._exit(127)
         self.pid, self.fd = pid, fd

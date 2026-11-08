@@ -27,8 +27,10 @@ DEFAULT_CONFIG = {
     "hint_delay_seconds": 60,
     "review_intervals_days": [1, 3, 7, 14, 30],
     "terminal_enabled": False,   # owner only; can only be changed through /api/terminal/enable
+    "shell_capture_enabled": False,  # owner only: record commands you type (never their output)
+    "shell_capture_folders": [],     # only capture inside these folders; empty = your git repos
 }
-PROTECTED_CONFIG = {"terminal_enabled"}  # never writable through the general settings save
+PROTECTED_CONFIG = {"terminal_enabled", "shell_capture_enabled", "shell_capture_folders"}  # own routes  # never writable through the general settings save
 
 _current_user = contextvars.ContextVar("addgate_user", default=None)
 

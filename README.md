@@ -73,6 +73,21 @@ Every terminal open/close, refused connection and lockout is in **Settings → T
 log** (events only, never keystrokes). What it can't stop: someone who knows your password sitting
 at your unlocked Mac, who could open Terminal.app anyway.
 
+## Shell capture
+
+Records the commands **you** type yourself (never their output), so gate questions can cover your
+own work, not just Claude's. Owner only, off by default: turn it on in **Settings → Shell capture**.
+
+- **Where:** ADDGate's built-in Terminal captures automatically (zsh). For your regular Terminal
+  app, Settings can add one line to `~/.zshrc` (it backs the file up first), or add it yourself:
+  `source "/path/to/ADDGate/backend/hooks/shell_capture.zsh"`.
+- **Only in folders you choose** (default: your git repos). Everything else is ignored.
+- **Start a command with a space** and it's never recorded.
+- **Secrets are redacted before saving:** API keys and tokens, `Authorization` headers,
+  `user:pass@` in URLs, `-p`/`--password`/`--token` flags, `export SOMETHING_TOKEN=...`, and long
+  random strings. The raw record is deleted as soon as it's imported.
+- Noise like `ls` and `cd` is skipped. You can delete everything captured at any time.
+
 ## Storage
 
 Everything lives in one SQLite database, `~/gate/addgate.db`, so there's no database server
@@ -151,5 +166,4 @@ that's the first place to tune if the questions feel off.
 ## Not built yet
 
 - Docker sabotage drills (break the code, you fix it)
-- Shell command capture (OSC 133)
 - Notion (dropped)

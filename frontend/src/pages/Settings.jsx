@@ -53,7 +53,10 @@ function TerminalSettings({ go }) {
   }
   const label = { terminal_open: "Terminal opened", terminal_close: "Terminal closed", terminal_refused: "Connection refused",
     terminal_enabled: "Terminal turned on", terminal_disabled: "Terminal turned off", login_locked: "Login locked (5 wrong passwords)",
-    confirm_locked: "Unlock locked (5 wrong passwords)" };
+    confirm_locked: "Unlock locked (5 wrong passwords)",
+    shell_capture_on: "Shell capture turned on", shell_capture_off: "Shell capture turned off",
+    zshrc_hook_added: "Shell capture added to ~/.zshrc", zshrc_hook_removed: "Shell capture removed from ~/.zshrc",
+    shell_history_cleared: "Captured commands deleted" };
   return (
     <section className="panel">
       <h2>Terminal and security log</h2>
@@ -79,6 +82,71 @@ function TerminalSettings({ go }) {
             <span className="faint">{e.detail}</span>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function ShellSettings() {
+  const [st, setSt] = useState(null);
+  const [folders, setFolders] = useState("");
+  const [msg, setMsg] = useState(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const apply = (r) => { setSt(r); setFolders((r.folders || []).join("\n")); };
+  useEffect(() => { api("/shell/status").then(apply).catch(() => {}); }, []);
+  if (!st) return null;
+  const save = async (extra) => {
+    setMsg(null);
+    try { apply(await api("/shell/settings", { method: "POST", body: { folders: folders.split("\n").map((f) => f.trim()).filter(Boolean), ...extra } })); setMsg("Saved."); }
+    catch (e) { setMsg(e.message); }
+  };
+  const zshrc = async (install) => {
+    try { const z = await api("/shell/zshrc", { method: "POST", body: { install } }); setSt({ ...st, zshrc: z }); }
+    catch (e) { setMsg(e.message); }
+  };
+  return (
+    <section className="panel">
+      <h2>Shell capture</h2>
+      <p className="muted" style={{ margin: 0, fontSize: 14.5 }}>
+        Records the commands <strong>you</strong> type (not their output), so gate questions can cover your own work too.
+        Only you see them. Secrets like tokens, passwords and keys are redacted before anything is saved, and the raw
+        record is deleted right after. Start a command with a <strong>space</strong> and it's never recorded.
+      </p>
+      <div className="row">
+        <span className="pill" style={{ background: st.enabled ? "var(--green-soft)" : "var(--raised)", color: st.enabled ? "var(--green-text)" : "var(--muted)" }}>
+          <span className="dot" aria-hidden="true" />{st.enabled ? "On" : "Off"}</span>
+        <button className="btn small" onClick={() => save({ enabled: !st.enabled })}>{st.enabled ? "Turn off" : "Turn on"}</button>
+      </div>
+      <div className="field">
+        <label htmlFor="sfold">Only capture inside these folders (one per line)</label>
+        <textarea id="sfold" value={folders} onChange={(e) => setFolders(e.target.value)} placeholder={"/Users/you/code/homelab\n/Users/you/ctf"} style={{ minHeight: 90 }} />
+        <span className="faint">
+          {st.folders.length ? "Commands anywhere else are ignored." :
+            st.effective_folders.length ? `Empty, so your git repos are used: ${st.effective_folders.join(", ")}` :
+            "Nothing chosen and no git repos set, so nothing is captured yet."}
+        </span>
+      </div>
+      <div><button className="btn" onClick={() => save({})}>Save folders</button>{msg && <span className="faint" role="status" style={{ marginLeft: 10 }}>{msg}</span>}</div>
+
+      <div className="item" style={{ gap: 8 }}>
+        <div style={{ fontWeight: 500 }}>Where it captures</div>
+        <div className="faint">ADDGate's built-in Terminal: automatically (zsh).</div>
+        <div className="faint">Your regular Terminal app: {st.zshrc.installed ? "yes, via ~/.zshrc" : "not yet"}.</div>
+        <div className="row">
+          {st.zshrc.installed
+            ? <button className="btn small" onClick={() => zshrc(false)}>Remove from ~/.zshrc</button>
+            : <button className="btn small" onClick={() => zshrc(true)}>Add to ~/.zshrc (backs it up first)</button>}
+        </div>
+        {!st.zshrc.installed && <div className="faint">Or add this line yourself: <code>{st.zshrc.line}</code> Open terminals pick it up after restarting.</div>}
+      </div>
+
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <span className="faint">{st.stored} command{st.stored === 1 ? "" : "s"} stored</span>
+        {st.stored > 0 && (confirmClear
+          ? <span className="row"><span className="faint">Delete all of them?</span>
+              <button className="btn small" onClick={async () => { apply(await api("/shell/clear", { method: "POST" })); setConfirmClear(false); }}>Yes, delete</button>
+              <button className="btn small" onClick={() => setConfirmClear(false)}>Cancel</button></span>
+          : <button className="btn small" onClick={() => setConfirmClear(true)}>Delete captured commands</button>)}
       </div>
     </section>
   );
@@ -125,6 +193,7 @@ export default function Settings({ user, go }) {
       </section>
 
       {user.is_owner && <TerminalSettings go={go} />}
+      {user.is_owner && <ShellSettings />}
 
       <section className="panel">
         <h2>Claude Code Stop hook</h2>

@@ -3,7 +3,7 @@ Binds to 127.0.0.1 only: nothing is reachable from other machines."""
 import os
 import secrets
 import time
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from flask import Flask, g, jsonify, request, send_from_directory, session
@@ -16,6 +16,7 @@ import claude_client as cc
 import gate
 import hook_install
 import security
+import shell_capture
 import stats as stats_mod
 import terminal
 import users
@@ -293,6 +294,16 @@ def usage():
 def capture_view():
     st = gate.state()
     sessions = [capture.summarize(s) for s in capture.sessions_today()]
+    shell = None
+    if _owner():  # your own commands are only ever shown to the owner
+        shell_capture.ingest()
+        start_of_day = datetime.combine(date.today(), datetime.min.time()).astimezone().isoformat()
+        typed = shell_capture.commands_since(session["uid"], start_of_day)
+        sessions += [shell_capture.summarize_block(b) for b in shell_capture.blocks(typed)]
+        sessions.sort(key=lambda s: s["start"] or "")
+        cfg_ = load_config()
+        shell = {"enabled": bool(cfg_.get("shell_capture_enabled")), "today": len(typed),
+                 "folders": shell_capture.allowed_folders(cfg_)}
     for s in sessions:
         end = s["end"] or ""
         if st["status"] == "closed":  # quizzed already unless worked on after the close
@@ -301,8 +312,66 @@ def capture_view():
             s["after_open"] = end >= st["opened_at"]
     cfg = load_config()
     return jsonify(gate=st, sessions=sessions, commits=capture.git_commits(),
-                   hook=hook_install.status(), repos=cfg.get("repos", []),
+                   hook=hook_install.status(), repos=cfg.get("repos", []), shell=shell,
                    due=len(gate.due_concepts()))
+
+
+# ---------- shell capture (owner only) ----------
+
+def _owner_or_403():
+    owner = _owner()
+    if not owner:
+        return None, (jsonify(error="Only this Mac's owner can use shell capture.", kind="forbidden"), 403)
+    return owner, None
+
+
+@app.get("/api/shell/status")
+def shell_status():
+    owner, err = _owner_or_403()
+    if err:
+        return err
+    cfg = load_config()
+    count = db.one("SELECT COUNT(*) AS n, MIN(started_at) AS first FROM shell_commands WHERE user_id = ?", (owner["id"],))
+    return jsonify(enabled=bool(cfg.get("shell_capture_enabled")), folders=cfg.get("shell_capture_folders", []),
+                   effective_folders=shell_capture.allowed_folders(cfg), stored=count["n"], since=count["first"],
+                   zshrc=shell_capture.zshrc_status())
+
+
+@app.post("/api/shell/settings")
+def shell_settings():
+    owner, err = _owner_or_403()
+    if err:
+        return err
+    b = body()
+    cfg = load_config()
+    if "folders" in b:
+        cfg["shell_capture_folders"] = [str(Path(f).expanduser()) for f in b["folders"] if str(f).strip()][:50]
+    if "enabled" in b:
+        cfg["shell_capture_enabled"] = bool(b["enabled"])
+        shell_capture.set_enabled(cfg["shell_capture_enabled"])
+        security.audit(owner["id"], "shell_capture_on" if cfg["shell_capture_enabled"] else "shell_capture_off")
+    save_config(cfg)
+    return shell_status()
+
+
+@app.post("/api/shell/zshrc")
+def shell_zshrc():
+    owner, err = _owner_or_403()
+    if err:
+        return err
+    st = shell_capture.install_zshrc() if body().get("install") else shell_capture.uninstall_zshrc()
+    security.audit(owner["id"], "zshrc_hook_added" if st["installed"] else "zshrc_hook_removed")
+    return jsonify(st)
+
+
+@app.post("/api/shell/clear")
+def shell_clear():
+    owner, err = _owner_or_403()
+    if err:
+        return err
+    shell_capture.clear(owner["id"])
+    security.audit(owner["id"], "shell_history_cleared")
+    return shell_status()
 
 
 @app.post("/api/gate/open")
