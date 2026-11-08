@@ -14,6 +14,7 @@ import shutil
 import sys
 from pathlib import Path
 
+APP_VERSION = "2.9"
 GATE_HOME = Path(os.environ.get("ADDGATE_HOME", Path.home() / "gate")).expanduser()
 CLAUDE_HOME = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")).expanduser()
 
@@ -39,14 +40,19 @@ DEFAULT_CONFIG = {
     "terminal_enabled": False,   # owner only; can only be changed through /api/terminal/enable
     "shell_capture_enabled": False,  # owner only: record commands you type (never their output)
     "shell_capture_folders": [],     # only capture inside these folders; empty = your git repos
+    "account_token_cap": 0,          # set by an admin only: ADDGate's own Claude tokens per day for this account; 0 = no cap
 }
-PROTECTED_CONFIG = {"terminal_enabled", "shell_capture_enabled", "shell_capture_folders"}  # own routes  # never writable through the general settings save
+PROTECTED_CONFIG = {"terminal_enabled", "shell_capture_enabled", "shell_capture_folders", "account_token_cap"}  # own routes; never writable through the general settings save
 
 _current_user = contextvars.ContextVar("addgate_user", default=None)
 
 
 def use_user(user_id):
     _current_user.set(user_id)
+
+
+def current_user_or_none():
+    return _current_user.get()
 
 
 def current_user():

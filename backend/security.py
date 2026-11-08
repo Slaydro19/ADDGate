@@ -88,6 +88,12 @@ def login_succeeded(username):
         _failures.pop((username or "").strip().lower(), None)
 
 
+def unlock(username):
+    """Clear a lockout (admin action)."""
+    with _lock:
+        _failures.pop((username or "").strip().lower(), None)
+
+
 # ---------- audit log ----------
 
 def audit(user_id, event, detail=""):
@@ -96,6 +102,12 @@ def audit(user_id, event, detail=""):
                   (user_id, datetime.now().astimezone().isoformat(), event, str(detail)[:300]))
 
 
-def recent_audit(limit=30):
-    return db.all_rows("SELECT a.at, a.event, a.detail, u.username FROM audit a "
-                       "LEFT JOIN users u ON u.id = a.user_id ORDER BY a.id DESC LIMIT ?", (limit,))
+def recent_audit(limit=30, user_id=None, event=None):
+    where, params = [], []
+    if user_id:
+        where.append("a.user_id = ?"); params.append(user_id)
+    if event:
+        where.append("a.event LIKE ?"); params.append(event.replace("%", "") + "%")
+    sql = ("SELECT a.at, a.event, a.detail, u.username FROM audit a LEFT JOIN users u ON u.id = a.user_id "
+           + ("WHERE " + " AND ".join(where) + " " if where else "") + "ORDER BY a.id DESC LIMIT ?")
+    return db.all_rows(sql, (*params, max(1, min(int(limit), 500))))

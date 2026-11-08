@@ -8,13 +8,13 @@ import subprocess
 from datetime import date
 
 import db
-from config import RUNNER_DIR, load_config
+from config import RUNNER_DIR, current_user_or_none, load_config
 
 
 class ClaudeError(Exception):
     def __init__(self, message, kind="error"):
         super().__init__(message)
-        self.kind = kind  # "missing" | "auth" | "limit" | "timeout" | "error"
+        self.kind = kind  # "missing" | "auth" | "limit" | "cap" | "timeout" | "error"
 
 
 LIMIT_PATTERNS = re.compile(r"usage limit|rate limit|limit reached|resets? at", re.I)
@@ -38,6 +38,11 @@ def _record_usage(payload):
                   "work_tokens = work_tokens + excluded.work_tokens, "
                   "calls = calls + 1, cost_usd = cost_usd + excluded.cost_usd",
                   (date.today().isoformat(), total, work, cost))
+        uid = current_user_or_none()
+        if uid:  # which account used it, so an admin can see and cap it
+            c.execute("INSERT INTO usage_user (user_id, day, work_tokens, calls) VALUES (?, ?, ?, 1) "
+                      "ON CONFLICT(user_id, day) DO UPDATE SET work_tokens = work_tokens + excluded.work_tokens, "
+                      "calls = calls + 1", (uid, date.today().isoformat(), work))
 
 
 def note_limit_hit(message):
@@ -55,6 +60,12 @@ def ask(instructions, data_text="", timeout=240):
         raise ClaudeError("Claude Code isn't installed or isn't on your PATH.", "missing")
 
     cfg = load_config()
+    cap = int(cfg.get("account_token_cap") or 0)  # set by an admin; 0 = no cap
+    if cap and current_user_or_none():
+        row = db.one("SELECT work_tokens FROM usage_user WHERE user_id = ? AND day = ?",
+                     (current_user_or_none(), date.today().isoformat())) or {}
+        if int(row.get("work_tokens") or 0) >= cap:
+            raise ClaudeError("This account's daily limit, set by an admin, is used up. It resets tomorrow.", "cap")
     cmd = [exe, "-p", instructions, "--output-format", "json"]
     if cfg.get("model"):
         cmd += ["--model", cfg["model"]]
@@ -141,3 +152,10 @@ def usage_today():
     if row.get("limit_message"):
         out["limit_message"] = row["limit_message"]
     return out
+
+
+def usage_today_all():
+    """Machine-wide totals for the admin health view (the same shared counters as usage_today)."""
+    row = db.one("SELECT work_tokens, calls, limit_message FROM usage WHERE day = ?", (date.today().isoformat(),)) or {}
+    return {"tokens": int(row.get("work_tokens") or 0), "calls": int(row.get("calls") or 0),
+            "limit_message": row.get("limit_message")}

@@ -41,8 +41,8 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "ADDGate",
             "CFBundleDisplayName": "ADDGate",
-            "CFBundleShortVersionString": "2.8",
-            "CFBundleVersion": "2.8",
+            "CFBundleShortVersionString": "2.9",
+            "CFBundleVersion": "2.9",
             "LSMinimumSystemVersion": "11.0",
             "NSHighResolutionCapable": True,
             # the window loads the app from http://127.0.0.1:5055 on this Mac only

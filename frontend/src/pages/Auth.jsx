@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { api } from "../api.js";
 import { Info, Logo, Spinner } from "../icons.jsx";
 
-export default function Auth({ hasUsers, onSignedIn }) {
+export default function Auth({ hasUsers, signupOpen = true, onSignedIn }) {
   const [mode, setMode] = useState(hasUsers ? "login" : "signup");
   const [form, setForm] = useState({ username: "", password: "", confirm: "", display_name: "", remember: true });
   const [busy, setBusy] = useState(false);
@@ -36,10 +36,12 @@ export default function Auth({ hasUsers, onSignedIn }) {
             : "Sign in to pick up your gate and reviews."}</p>
         </div>
 
-        <div className="tabs" role="tablist" aria-label="Account">
-          <button type="button" role="tab" aria-selected={!signup} className={!signup ? "on" : ""} onClick={() => switchMode("login")}>Sign in</button>
-          <button type="button" role="tab" aria-selected={signup} className={signup ? "on" : ""} onClick={() => switchMode("signup")}>Create account</button>
-        </div>
+        {signupOpen || !hasUsers ? (
+          <div className="tabs" role="tablist" aria-label="Account">
+            <button type="button" role="tab" aria-selected={!signup} className={!signup ? "on" : ""} onClick={() => switchMode("login")}>Sign in</button>
+            <button type="button" role="tab" aria-selected={signup} className={signup ? "on" : ""} onClick={() => switchMode("signup")}>Create account</button>
+          </div>
+        ) : null}
 
         {signup && (
           <div className="field">
@@ -75,7 +77,7 @@ export default function Auth({ hasUsers, onSignedIn }) {
           {busy ? <><Spinner /> {signup ? "Creating…" : "Signing in…"}</> : signup ? "Create account" : "Sign in"}
         </button>
         <p className="faint" style={{ margin: 0, textAlign: "center" }}>
-          Accounts live only on this Mac, in ~/gate. Forgot your password? Ask whoever runs ADDGate here to reset it.
+          Accounts live only on this Mac, in ~/gate. Forgot your password? Ask an admin to reset it.
         </p>
       </form>
     </div>

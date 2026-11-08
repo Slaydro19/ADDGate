@@ -13,6 +13,9 @@ export async function api(path, { method = "GET", body } = {}) {
     if (res.status === 401 && data?.kind === "login") {
       window.dispatchEvent(new Event("addgate:signed-out"));
     }
+    if (res.status === 403 && data?.kind === "must_change") {   // an admin issued a temporary password
+      window.dispatchEvent(new Event("addgate:must-change"));
+    }
     if (data?.kind === "auth" || data?.kind === "missing") {  // Claude Code sign-in expired or gone
       window.dispatchEvent(new Event("addgate:claude-lost"));
     }

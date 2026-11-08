@@ -9,11 +9,14 @@ import Study from "./pages/Study.jsx";
 import Vault from "./pages/Vault.jsx";
 import Settings from "./pages/Settings.jsx";
 import Stats from "./pages/Stats.jsx";
+import Admin from "./pages/Admin.jsx";
+import ForceChange from "./pages/ForceChange.jsx";
 
-const PAGES = { gate: "Gate", study: "Study", vault: "Vault", stats: "Stats", settings: "Settings" };
+const PAGES = { gate: "Gate", study: "Study", vault: "Vault", stats: "Stats", settings: "Settings", admin: "Admin" };
+const ADMIN_ONLY = new Set(["admin"]);
 const LEGACY = { capture: "gate", terminal: "gate", review: "study" };   // old bookmarks and links
 const pageFromHash = () => {
-  const h = location.hash.slice(1);
+  const h = location.hash.slice(1).split("/")[0];   // "#admin/backups" still means the Admin page
   return h in PAGES ? h : LEGACY[h] || "gate";
 };
 
@@ -99,10 +102,12 @@ export default function App() {
 
   useEffect(() => { loadAuth(); }, [loadAuth]);
   useEffect(() => {
-    const out = () => setAuth((a) => ({ ...(a || {}), user: null, has_users: true }));
+    const out = () => { setConn(null); setUsage(null); loadAuth(); };   // signed out elsewhere (or turned off by an admin)
+    const must = () => loadAuth();                                       // an admin issued a temporary password
     addEventListener("addgate:signed-out", out);
-    return () => removeEventListener("addgate:signed-out", out);
-  }, []);
+    addEventListener("addgate:must-change", must);
+    return () => { removeEventListener("addgate:signed-out", out); removeEventListener("addgate:must-change", must); };
+  }, [loadAuth]);
   useEffect(() => { if (signedIn) checkConn(); }, [signedIn, checkConn]);
   useEffect(() => {
     const lost = () => checkConn(false);  // server already knows it's disconnected; this costs nothing
@@ -125,13 +130,14 @@ export default function App() {
 
   async function signOut() {
     try { await api("/auth/logout", { method: "POST" }); } catch { /* already signed out */ }
-    setAuth({ user: null, has_users: true });
     setConn(null); setUsage(null); setDueCount(0);
     location.hash = "";
+    loadAuth();
   }
 
   if (!auth) return <div className="center"><div className="row muted"><Spinner /> Loading…</div></div>;
-  if (!signedIn) return <Auth hasUsers={auth.has_users} onSignedIn={(user) => { setAuth({ user, has_users: true }); setPage("gate"); location.hash = "gate"; }} />;
+  if (!signedIn) return <Auth hasUsers={auth.has_users} signupOpen={auth.signup_open !== false} onSignedIn={(user) => { setAuth({ user, has_users: true }); setPage("gate"); location.hash = "gate"; }} />;
+  if (auth.user.must_change_password) return <ForceChange user={auth.user} onDone={(user) => setAuth({ ...auth, user })} onSignOut={signOut} />;
   if (!conn || (!conn.connected && !(conn.checking && conn.wasConnected))) return <Connect conn={conn} onRetry={retry} />;
 
   const props = { go, refreshUsage, user: auth.user };
@@ -140,7 +146,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand"><Logo /> <span><b>ADD</b><span className="light">Gate</span></span></div>
         <nav className="nav" aria-label="Main">
-          {Object.entries(PAGES).map(([key, label]) => (
+          {Object.entries(PAGES).filter(([key]) => !ADMIN_ONLY.has(key) || auth.user.is_admin).map(([key, label]) => (
             <button key={key} className={page === key ? "on" : ""} aria-current={page === key ? "page" : undefined}
               onClick={() => go(key)}>
               {label}{key === "study" && dueCount > 0 && <span className="count">{dueCount}</span>}
@@ -157,11 +163,12 @@ export default function App() {
           <UserMenu user={auth.user} onSignOut={signOut} go={go} />
         </div>
       </header>
-      {page === "gate" && <Gate {...props} />}
+      {(page === "gate" || (ADMIN_ONLY.has(page) && !auth.user.is_admin)) && <Gate {...props} />}
       {page === "study" && <Study {...props} />}
       {page === "vault" && <Vault {...props} />}
       {page === "stats" && <Stats {...props} />}
       {page === "settings" && <Settings {...props} />}
+      {page === "admin" && auth.user.is_admin && <Admin {...props} />}
     </>
   );
 }

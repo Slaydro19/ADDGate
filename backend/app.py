@@ -9,6 +9,9 @@ from pathlib import Path
 from flask import Flask, g, jsonify, request, send_from_directory, session
 from flask_sock import Sock
 
+import admin
+import appsettings
+import backup
 import capture
 import db
 import migrate
@@ -28,6 +31,8 @@ PORT = int(os.environ.get("ADDGATE_PORT", 5055))
 DEV = bool(os.environ.get("ADDGATE_DEV") or os.environ.get("FLASK_DEBUG"))
 ALLOWED_PORTS = {PORT} | ({5173} if DEV else set())  # 5173 = Vite dev server in dev mode only
 PUBLIC_API = {"/api/status", "/api/auth/me", "/api/auth/login", "/api/auth/signup", "/api/auth/logout"}
+# while an admin-issued temporary password is still in use, only changing it (or signing out) works
+MUST_CHANGE_OK = {"/api/auth/me", "/api/auth/password", "/api/auth/logout", "/api/status"}
 
 
 def secret_key():
@@ -51,7 +56,19 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 _conn_cache = {"at": 0, "value": None}
+app.config["ADDGATE_CONN_CACHE"] = _conn_cache  # the admin health view reads the last Claude check
 sock = Sock(app)
+app.register_blueprint(admin.bp)
+
+
+def _session_user():
+    """The signed-in account, or None when the cookie is stale: account turned off, signed out
+    everywhere by an admin, or a password change in another browser."""
+    uid = session.get("uid")
+    user = users.get(uid) if uid else None
+    if user and (user.get("disabled") or int(session.get("epoch") or 0) != int(user.get("session_epoch") or 0)):
+        return None
+    return user
 
 
 # ---------- request guards ----------
@@ -68,13 +85,21 @@ def guard():
     # Blocks cross-site form posts: browsers can't send JSON cross-origin without a CORS preflight.
     if request.method in ("POST", "PUT", "DELETE") and not request.is_json:
         return jsonify(error="Requests must be JSON.", kind="bad_request"), 415
-    uid = session.get("uid")
-    user = users.get(uid) if uid else None
+    user = _session_user()
     if user:
         use_user(user["id"])
-    elif request.path not in PUBLIC_API:
-        session.clear()
-        return jsonify(error="Please sign in.", kind="login"), 401
+        if user.get("must_change_password") and request.path not in MUST_CHANGE_OK:
+            return jsonify(error="Choose a new password to continue.", kind="must_change"), 403
+        users.touch_seen(user["id"])
+        try:
+            backup.maybe_daily()  # one automatic backup a day, as people use the app
+        except Exception:
+            pass  # a failed backup must never break a request
+    else:
+        if session.get("uid"):
+            session.clear()
+        if request.path not in PUBLIC_API:
+            return jsonify(error="Please sign in.", kind="login"), 401
     return None
 
 
@@ -92,7 +117,7 @@ def terminal_error(e):
 def claude_error(e):
     if e.kind in ("auth", "missing"):  # a real call just proved the connection is gone
         _conn_cache.update(at=time.time(), value={"connected": False, "kind": e.kind, "message": str(e)})
-    code = {"limit": 429, "missing": 503, "auth": 401, "empty": 409}.get(e.kind, 502)
+    code = {"limit": 429, "cap": 429, "missing": 503, "auth": 401, "empty": 409}.get(e.kind, 502)
     return jsonify(error=str(e), kind=e.kind), code
 
 
@@ -114,20 +139,26 @@ def body():
 
 @app.get("/api/auth/me")
 def me():
-    uid = session.get("uid")
-    user = users.get(uid) if uid else None
-    return jsonify(user=users.public(user) if user else None, has_users=users.has_users())
+    user = _session_user()
+    return jsonify(user=users.public(user) if user else None, has_users=users.has_users(),
+                   signup_open=appsettings.signup_open() or not users.has_users())
 
 
 @app.post("/api/auth/signup")
 def signup():
     b = body()
+    if users.has_users() and not appsettings.signup_open():
+        return jsonify(error="Sign-up is turned off. Ask an admin to create your account.", kind="auth_form"), 403
     user, first = users.create(b.get("username"), b.get("password"), b.get("display_name"))
     if first:
         migrate.adopt_legacy(user["id"])
+    else:
+        appsettings.apply_new_account_defaults(user["id"])
+    security.audit(user["id"], "account_created", "first account, admin" if first else "sign-up")
     session.clear()
     session.permanent = True
     session["uid"] = user["id"]
+    session["epoch"] = 0
     return jsonify(user=users.public(user))
 
 
@@ -142,12 +173,16 @@ def login():
     except users.AuthError:
         if security.login_failed(b.get("username")):
             security.audit(None, "login_locked", (b.get("username") or "")[:40])
+        else:
+            security.audit(None, "login_failed", (b.get("username") or "")[:40])
         raise
     security.login_succeeded(b.get("username"))
     session.clear()
     session.permanent = bool(b.get("remember", True))
     session["uid"] = user["id"]
-    return jsonify(user=users.public(user))
+    session["epoch"] = int(user.get("session_epoch") or 0)
+    security.audit(user["id"], "login", "must choose a new password" if user.get("must_change_password") else "")
+    return jsonify(user=users.public(users.get(user["id"])))
 
 
 @app.post("/api/auth/logout")
@@ -161,8 +196,9 @@ def logout():
 @app.post("/api/auth/password")
 def password():
     b = body()
-    users.change_password(session["uid"], b.get("current"), b.get("new"))
-    return jsonify(ok=True)
+    session["epoch"] = users.change_password(session["uid"], b.get("current"), b.get("new"))  # other browsers sign out
+    security.audit(session["uid"], "password_changed")
+    return jsonify(ok=True, user=users.public(users.get(session["uid"])))
 
 
 @app.post("/api/auth/confirm")
@@ -187,7 +223,7 @@ def _unlocked():
 
 
 def _owner():
-    user = users.get(session.get("uid"))
+    user = _session_user()
     return user if user and user.get("is_owner") else None
 
 

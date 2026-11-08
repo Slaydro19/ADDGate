@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from config import GATE_HOME
 
 DB_FILE = GATE_HOME / "addgate.db"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 _local = threading.local()
 
 SCHEMA = """
@@ -153,6 +153,24 @@ MIGRATIONS = {
             redacted   INTEGER NOT NULL DEFAULT 0
         )""",
         "CREATE INDEX IF NOT EXISTS shell_commands_time ON shell_commands (user_id, started_at)",
+    ],
+    5: [
+        # admin role, account controls and per-account Claude usage
+        "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 0",   # bump to sign an account out everywhere
+        "ALTER TABLE users ADD COLUMN last_login TEXT",
+        "ALTER TABLE users ADD COLUMN last_seen TEXT",
+        "UPDATE users SET is_admin = 1 WHERE is_owner = 1",                         # the first account starts as admin
+        "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+        """CREATE TABLE IF NOT EXISTS usage_user (
+            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            day         TEXT NOT NULL,
+            work_tokens INTEGER NOT NULL DEFAULT 0,
+            calls       INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (user_id, day)
+        )""",
     ],
 }
 
