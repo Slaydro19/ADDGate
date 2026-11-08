@@ -20,10 +20,10 @@ import shell_capture
 import stats as stats_mod
 import terminal
 import users
-from config import (DEFAULT_CONFIG, PROTECTED_CONFIG, SECRET_FILE, ensure_dirs, load_config, save_config,
-                    use_user)
+from config import (BUNDLE_DIR, DEFAULT_CONFIG, PROTECTED_CONFIG, SECRET_FILE, ensure_dirs, load_config,
+                    save_config, use_user)
 
-STATIC = Path(__file__).parent / "static"
+STATIC = BUNDLE_DIR / "static"  # the built UI: next to this file, or inside ADDGate.app
 PORT = int(os.environ.get("ADDGATE_PORT", 5055))
 DEV = bool(os.environ.get("ADDGATE_DEV") or os.environ.get("FLASK_DEBUG"))
 ALLOWED_PORTS = {PORT} | ({5173} if DEV else set())  # 5173 = Vite dev server in dev mode only

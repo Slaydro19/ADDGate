@@ -191,6 +191,10 @@ export default function Gate({ go, refreshUsage, user }) {
   const live = sessions.filter((s) => s.after_open)[sessions.filter((s) => s.after_open).length - 1] || sessions[sessions.length - 1];
   const withClaude = sessions.filter((x) => x.kind !== "shell").length;
   const typed = sessions.filter((x) => x.kind === "shell").reduce((n, x) => n + x.commands, 0);
+  // v2.8 wording: say "ran" for commands you typed, "worked on" for things done with Claude
+  const things = `${withClaude} thing${withClaude === 1 ? "" : "s"} with Claude`;
+  const cmds = `${typed} command${typed === 1 ? "" : "s"} you ran`;
+  const headline = withClaude && typed ? `${things}, ${cmds}.` : withClaude ? `${things}.` : typed ? `${cmds}.` : "Nothing yet.";
 
   return (
     <div className="gatepage">
@@ -202,7 +206,7 @@ export default function Gate({ go, refreshUsage, user }) {
         <div>
           <div className="eyebrow green"><span className="dot" aria-hidden="true" /> Gate open</div>
           <div style={{ fontSize: 26, fontWeight: 500, letterSpacing: "-.03em", lineHeight: 1.15, margin: "10px 0 4px" }}>
-            {!withClaude && !typed ? "Nothing yet." : `${withClaude} with Claude${typed ? `, ${typed} typed` : ""}.`}
+            {headline}
           </div>
           <div className="muted" style={{ fontSize: 14 }}>Recording since {fmtTime(cap.gate.opened_at)}.</div>
         </div>
@@ -240,7 +244,7 @@ export default function Gate({ go, refreshUsage, user }) {
           {cap.shell && <div className="src"><span>Shell</span><span>{cap.shell.enabled ? `${cap.shell.today} today` : "off"}</span></div>}
           {(!cap.hook.installed || (cap.shell && !cap.shell.enabled)) && (
             <div className="row" style={{ marginTop: 10 }}>
-              {!cap.hook.installed && <button className="btn small" onClick={installHook} disabled={!!busy}>{busy === "hook" ? "Installing…" : "Install hook"}</button>}
+              {!cap.hook.installed && <button className="btn small" onClick={installHook} disabled={!!busy}>{busy === "hook" ? "Installing…" : cap.hook.stale ? "Repair hook" : "Install hook"}</button>}
               <button className="btn small" onClick={() => go("settings")}>Set up sources</button>
             </div>
           )}

@@ -10,10 +10,20 @@ The signed-in account is set per request with use_user()."""
 import contextvars
 import json
 import os
+import shutil
+import sys
 from pathlib import Path
 
 GATE_HOME = Path(os.environ.get("ADDGATE_HOME", Path.home() / "gate")).expanduser()
 CLAUDE_HOME = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")).expanduser()
+
+# Where the app's own files live: the backend folder, or inside ADDGate.app when packaged.
+BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+# Hook scripts are copied to ~/gate/hooks so Claude Code and zsh point at a path that never
+# moves, even if the app folder is renamed or ADDGate.app is rebuilt.
+HOOKS_DIR = GATE_HOME / "hooks"
+STOP_HOOK = HOOKS_DIR / "stop_hook.py"
+SHELL_HOOK = HOOKS_DIR / "shell_capture.zsh"
 
 SESSIONS_DIR = GATE_HOME / "sessions"
 RUNNER_DIR = GATE_HOME / ".runner"
@@ -47,9 +57,19 @@ def current_user():
 
 
 def ensure_dirs():
-    for d in (GATE_HOME, SESSIONS_DIR, RUNNER_DIR):
+    for d in (GATE_HOME, SESSIONS_DIR, RUNNER_DIR, HOOKS_DIR):
         d.mkdir(parents=True, exist_ok=True)
     GATE_HOME.chmod(0o700)  # database, cookie key and transcripts index are yours alone
+    install_hook_files()
+
+
+def install_hook_files():
+    """Keep ~/gate/hooks in sync with the copies shipped with this version of ADDGate."""
+    for name, mode in (("stop_hook.py", 0o700), ("shell_capture.zsh", 0o600)):
+        src, dest = BUNDLE_DIR / "hooks" / name, HOOKS_DIR / name
+        if src.exists() and (not dest.exists() or dest.read_bytes() != src.read_bytes()):
+            shutil.copyfile(src, dest)
+            dest.chmod(mode)
 
 
 def read_json(path, default):

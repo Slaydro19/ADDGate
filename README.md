@@ -106,6 +106,22 @@ Upgrading from an older version? On first start, ADDGate imports the old JSON fi
 (`users.json`, `vault.json`, `days/`, `usage.json`) into the database and renames each one
 with an `.imported` suffix. Nothing is deleted. Files from the May CLI are left alone.
 
+## Desktop app (Mac)
+
+ADDGate can run as a real Mac app, like Claude Desktop: its own window, Dock icon and Cmd+Q.
+
+```bash
+./build_app.sh
+```
+
+It packages ADDGate into `ADDGate.app` (Python included, about 60 MB), puts it in Applications and opens
+it. Opening the app starts ADDGate's server; quitting stops it. If `./start.sh` is already running, the
+app uses that server instead. Re-run `./build_app.sh` after each update.
+
+No Apple Developer account is needed: an app you build on your own Mac isn't quarantined, so it opens
+without a warning. Sharing the built `.app` with someone else would show Gatekeeper's warning (they'd
+right-click → Open); they can build it themselves from this repo instead.
+
 ## Daily use
 
 1. Leave ADDGate open and work in Claude Code as usual. Sessions show up on **Capture**.
