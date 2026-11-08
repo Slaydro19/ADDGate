@@ -71,7 +71,7 @@ function TerminalSettings({ go }) {
         </form>
       ) : (
         <div className="row"><span className="muted">The terminal is off.</span>
-          <button className="btn small" onClick={() => go("terminal")}>Set it up</button></div>
+          <button className="btn small" onClick={() => go("gate")}>Set it up in Gate</button></div>
       )}
       <div className="audit" aria-label="Security log">
         {events.length === 0 && <span className="muted">Nothing logged yet.</span>}
@@ -105,8 +105,8 @@ function ShellSettings() {
     catch (e) { setMsg(e.message); }
   };
   return (
-    <section className="panel">
-      <h2>Shell capture</h2>
+    <div className="subsection">
+      <h3>Shell capture</h3>
       <p className="muted" style={{ margin: 0, fontSize: 14.5 }}>
         Records the commands <strong>you</strong> type (not their output), so gate questions can cover your own work too.
         Only you see them. Secrets like tokens, passwords and keys are redacted before anything is saved, and the raw
@@ -148,7 +148,7 @@ function ShellSettings() {
               <button className="btn small" onClick={() => setConfirmClear(false)}>Cancel</button></span>
           : <button className="btn small" onClick={() => setConfirmClear(true)}>Delete captured commands</button>)}
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -192,30 +192,36 @@ export default function Settings({ user, go }) {
         <PasswordForm />
       </section>
 
-      {user.is_owner && <TerminalSettings go={go} />}
-      {user.is_owner && <ShellSettings />}
-
       <section className="panel">
-        <h2>Claude Code Stop hook</h2>
-        {hook?.installed ? (
-          <div className="row" style={{ color: "var(--green-text)" }}><Check /> Installed in {hook.settings_path}</div>
-        ) : (
-          <>
-            <p style={{ margin: 0 }} className="muted">Lets ADDGate know the moment Claude finishes a reply. It adds one entry to
-              your Claude Code settings and backs up the file first. Without it, ADDGate scans today's transcripts instead.</p>
-            <div><button className="btn" onClick={installHook}>Install Stop hook</button></div>
-          </>
-        )}
-      </section>
+        <h2>Sources</h2>
+        <p className="muted" style={{ margin: 0, fontSize: 15 }}>Where ADDGate learns what you worked on.</p>
 
-      <section className="panel">
-        <h2>Git repos to watch</h2>
-        <div className="field">
-          <label htmlFor="repos">One absolute path per line</label>
-          <textarea id="repos" value={repos} onChange={(e) => { setSaved(false); setRepos(e.target.value); }}
-            placeholder={"/Users/you/code/homelab\n/Users/you/code/ADDGate"} />
+        <div className="subsection">
+          <h3>Claude Code</h3>
+          {hook?.installed ? (
+            <div className="row" style={{ color: "var(--green)" }}><Check /> Stop hook installed in {hook.settings_path}</div>
+          ) : (
+            <>
+              <p style={{ margin: 0 }} className="muted">The Stop hook tells ADDGate the moment Claude finishes a reply. It adds one entry to
+                your Claude Code settings and backs up the file first. Without it, ADDGate scans today's transcripts instead.</p>
+              <div><button className="btn" onClick={installHook}>Install Stop hook</button></div>
+            </>
+          )}
         </div>
+
+        <div className="subsection">
+          <h3>Git repos</h3>
+          <div className="field">
+            <label htmlFor="repos">One absolute path per line</label>
+            <textarea id="repos" value={repos} onChange={(e) => { setSaved(false); setRepos(e.target.value); }}
+              placeholder={"/Users/you/code/homelab\n/Users/you/code/ADDGate"} />
+          </div>
+        </div>
+
+        {user.is_owner && <ShellSettings />}
       </section>
+
+      {user.is_owner && <TerminalSettings go={go} />}
 
       <section className="panel">
         <h2>Quiz and usage</h2>

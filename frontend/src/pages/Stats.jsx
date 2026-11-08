@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { api, fmtDate } from "../api.js";
+import { api, fmtDate, fmtTime } from "../api.js";
 import { Spinner } from "../icons.jsx";
 
-// Validated for the dark surface (#161920): CVD ΔE 27, contrast ≥ 3:1 (dataviz validator).
-const OWNED = "#3987e5";
-const NOT_OWNED = "#c98500";
+// Blue and amber on the stone surface: distinct for colour-blind viewers, 3:1 or better.
+const OWNED = "#2456d6";
+const NOT_OWNED = "#a85f00";
 
 function Tile({ label, value, sub }) {
   return (
@@ -110,10 +110,37 @@ function Categories({ categories }) {
   );
 }
 
+function Today({ sessions }) {
+  return (
+    <section className="panel" aria-labelledby="todayh">
+      <div><h2 id="todayh">Today</h2></div>
+      {sessions.length === 0 ? <div className="muted">Nothing captured yet today.</div> : (
+        <div className="timeline">
+          {sessions.map((s) => (
+            <div key={s.id} className="tl-row">
+              <span className="time">{fmtTime(s.start)}</span>
+              <span className={`pip ${s.kind === "shell" ? "typed" : ""} ${s.after_open ? "" : "old"}`} aria-hidden="true" />
+              <span><strong style={{ fontWeight: 600 }}>{s.title}</strong>{s.project && <span className="muted"> · {s.project}</span>}
+                {!s.after_open && <span className="muted"> · already quizzed</span>}</span>
+              <span className="meta">{s.minutes} min · {s.kind === "shell"
+                ? `${s.commands} command${s.commands === 1 ? "" : "s"}${s.failed ? `, ${s.failed} failed` : ""}`
+                : `${s.files.length} file${s.files.length === 1 ? "" : "s"}`}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Stats({ user }) {
   const [s, setS] = useState(null);
+  const [sessions, setSessions] = useState([]);
   const [error, setError] = useState(null);
-  useEffect(() => { api("/stats").then(setS).catch((e) => setError(e.message)); }, []);
+  useEffect(() => {
+    api("/stats").then(setS).catch((e) => setError(e.message));
+    api("/capture").then((c) => setSessions(c.sessions || [])).catch(() => {});
+  }, []);
 
   if (error) return <main><div className="note red" role="alert">{error}</div></main>;
   if (!s) return <main><div className="row muted"><Spinner /> Loading…</div></main>;
@@ -122,10 +149,13 @@ export default function Stats({ user }) {
 
   if (!t.concepts) {
     return (
-      <main><div className="panel"><div className="empty">
-        <div style={{ fontSize: 18, fontWeight: 600 }}>No stats yet.</div>
-        <div className="muted">Close your first gate and answer a few questions. Your numbers show up here.</div>
-      </div></div></main>
+      <main>
+        <Today sessions={sessions} />
+        <div className="panel"><div className="empty">
+          <strong>No stats yet.</strong>
+          <span>Close your first gate and answer a few questions. Your numbers show up here.</span>
+        </div></div>
+      </main>
     );
   }
 
@@ -139,12 +169,14 @@ export default function Stats({ user }) {
         </div>
       </section>
 
+      <Today sessions={sessions} />
+
       <div className="tiles">
         <Tile label="Held up" value={s.retention.pct == null ? "–" : `${s.retention.pct}%`}
           sub={s.retention.checked ? `${s.retention.held} of ${s.retention.checked} first-try concepts still owned later` : "shows once a concept you owned comes back in review"} />
         <Tile label="Streak" value={`${t.streak} day${t.streak === 1 ? "" : "s"}`} sub="days in a row with a gate or review" />
         <Tile label="Answers owned" value={t.attempts ? `${Math.round((100 * t.attempts_owned) / t.attempts)}%` : "–"} sub={`${t.attempts_owned} of ${t.attempts} answers`} />
-        <Tile label="Due today" value={t.due_today} sub={t.due_today ? <a href="#review">Review now</a> : "all caught up"} />
+        <Tile label="Due today" value={t.due_today} sub={t.due_today ? <a href="#study">Study now</a> : "all caught up"} />
       </div>
 
       <div className="cols">
@@ -153,20 +185,7 @@ export default function Stats({ user }) {
       </div>
 
       <div className="cols">
-        <section className="panel wide" aria-labelledby="holdh">
-          <div><h2 id="holdh">Didn't hold</h2>
-            <div className="faint">Owned the first time, missed when asked again. A screenshot can't fix these; only knowing it can.</div></div>
-          {s.retention.didnt_hold.length === 0 && (
-            <div className="muted">{s.retention.checked ? "Everything you owned has held up so far." : "Nothing to check yet. This fills in as owned concepts come back in review."}</div>
-          )}
-          {s.retention.didnt_hold.map((h) => (
-            <div key={h.name} className="item">
-              <div className="top"><span style={{ fontWeight: 500 }}>{h.name}</span><span className="heldtag no">latest: {h.latest}</span></div>
-              <span className="faint"><span className="mono">{h.category}</span> · {h.attempts} attempts</span>
-            </div>
-          ))}
-        </section>
-        <section className="panel side" aria-labelledby="honh">
+        <section className="panel wide" aria-labelledby="honh">
           <div><h2 id="honh">Honest record</h2><div className="faint">Just for you. Nothing here is a penalty.</div></div>
           <div className="hon"><span>Looked it up</span><span className="mono">{s.honesty.looked_up}</span></div>
           <div className="hon"><span>Pasted an explanation</span><span className="mono">{s.honesty.pasted}</span></div>
