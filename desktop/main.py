@@ -103,10 +103,24 @@ def run_server(parent_pid):
     Server().run()
 
 
+def window_background():
+    """The window's colour before the page paints, so there's no flash: black in dark mode, stone in light."""
+    try:
+        out = subprocess.run(["defaults", "read", "-g", "AppleInterfaceStyle"], capture_output=True, text=True, timeout=3)
+        return "#0A0A0B" if out.stdout.strip().lower() == "dark" else "#DFDEDB"
+    except Exception:
+        return "#0A0A0B"
+
+
 def error_page(title, body):
-    return f"""<html><body style="background:#0f1115;color:#e8e6e1;font:15px -apple-system,sans-serif;
-      display:grid;place-items:center;height:100vh;margin:0"><div style="max-width:520px">
-      <h2 style="margin:0 0 8px">{title}</h2><p style="color:#a3a8b3;line-height:1.5">{body}</p></div></body></html>"""
+    return f"""<html><head><meta name="color-scheme" content="light dark"><style>
+      body{{margin:0;display:grid;place-items:center;height:100vh;font:16px -apple-system,sans-serif;
+        background:#dfdedb;color:#26251e}}
+      p{{color:#5a5850;line-height:1.5}} code{{background:rgba(38,37,30,.1);padding:1px 6px;border-radius:6px}}
+      @media (prefers-color-scheme: dark){{body{{background:#0a0a0b;color:#f1eadb}}
+        p{{color:#a79f8e}} code{{background:rgba(214,178,94,.14)}}}}
+    </style></head><body><div style="max-width:520px">
+      <h2 style="margin:0 0 8px;font-weight:500">{title}</h2><p>{body}</p></div></body></html>"""
 
 
 def main():
@@ -150,7 +164,7 @@ def main():
                 webview.create_window("ADDGate", html=error_page(*problem), width=640, height=360)
             else:
                 webview.create_window("ADDGate", URL, width=1360, height=900, min_size=(900, 640),
-                                      background_color="#0F1115", text_select=True)
+                                      background_color=window_background(), text_select=True)
             storage = Path.home() / "gate" / "desktop"
             storage.mkdir(parents=True, exist_ok=True)
             # private_mode=False keeps your sign-in cookie between launches (stored under ~/gate).
