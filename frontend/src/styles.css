@@ -180,6 +180,7 @@ textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 
 .tdot { width: 7px; height: 7px; border-radius: 50%; background: var(--term-dim); display: inline-block; margin-right: 8px; }
 .tdot.open { background: var(--green); } .tdot.connecting { background: var(--amber); }
 .rail { display: flex; flex-direction: column; gap: 20px; min-height: 0; overflow: auto; padding: 4px 2px; }
+.rail > * { flex: none; }
 .rail h2 { margin: 0 0 10px; font: 500 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 .rail .status-line { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .rail .closebtn { width: 100%; min-height: 52px; font-size: 16px; }
