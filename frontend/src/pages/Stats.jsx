@@ -2,9 +2,9 @@ import React, { useEffect, useState } from "react";
 import { api, fmtDate, fmtTime } from "../api.js";
 import { Spinner } from "../icons.jsx";
 
-// Blue and amber on the stone surface: distinct for colour-blind viewers, 3:1 or better.
-const OWNED = "#2456d6";
-const NOT_OWNED = "#a85f00";
+// Light: blue and amber. Dark: gold and steel. Both pairs stay distinct for colour-blind viewers.
+const OWNED = "var(--owned)";
+const NOT_OWNED = "var(--notowned)";
 
 function Tile({ label, value, sub }) {
   return (

@@ -27,7 +27,7 @@ export default function Auth({ hasUsers, onSignedIn }) {
   return (
     <div className="center">
       <form className="card" onSubmit={submit} noValidate>
-        <div className="brand"><Logo /> ADDGate</div>
+        <div className="brand"><Logo size={32} /> <span><b>ADD</b><span className="light">Gate</span></span></div>
         <div>
           <h1 style={{ fontSize: 26 }}>{signup ? "Create your account" : "Welcome back"}</h1>
           <p className="sub">{signup

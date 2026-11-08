@@ -5,10 +5,11 @@ import "@xterm/xterm/css/xterm.css";
 import { api } from "../api.js";
 import { Info, Spinner } from "../icons.jsx";
 
-const THEME = {
-  background: "#26251e", foreground: "#dfdedb", cursor: "#9db8ff", cursorAccent: "#26251e",
-  selectionBackground: "#4a483f", black: "#313029", brightBlack: "#9e9d99",
-};
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const termTheme = () => ({
+  background: cssVar("--term-bg"), foreground: cssVar("--term-fg"), cursor: cssVar("--term-cursor"),
+  cursorAccent: cssVar("--term-bg"), selectionBackground: cssVar("--line-strong"), black: cssVar("--raised"), brightBlack: cssVar("--term-dim"),
+});
 
 function PasswordGate({ title, body, button, onSubmit }) {
   const [pw, setPw] = useState("");
@@ -45,8 +46,11 @@ function Shell({ onLocked }) {
     let ws, disposed = false;
     const term = new XTerm({
       cursorBlink: true, fontFamily: '"DM Mono", ui-monospace, Menlo, monospace', fontSize: 13.5,
-      theme: THEME, scrollback: 5000, allowProposedApi: false,
+      theme: termTheme(), scrollback: 5000, allowProposedApi: false,
     });
+    const retheme = () => { term.options.theme = termTheme(); };
+    window.addEventListener("addgate:theme", retheme);
+    const mqd = window.matchMedia("(prefers-color-scheme: dark)"); mqd.addEventListener("change", retheme);
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(box.current);
@@ -84,7 +88,7 @@ function Shell({ onLocked }) {
       ws.onclose = () => { if (!disposed) setState("closed"); };
     })();
 
-    return () => { disposed = true; input.dispose(); ro.disconnect(); try { ws?.close(); } catch { /* */ } term.dispose(); };
+    return () => { disposed = true; window.removeEventListener("addgate:theme", retheme); mqd.removeEventListener("change", retheme); input.dispose(); ro.disconnect(); try { ws?.close(); } catch { /* */ } term.dispose(); };
   }, [gen, onLocked]);
 
   return (
@@ -92,7 +96,7 @@ function Shell({ onLocked }) {
       <div className="termbar">
         <span><span className={`tdot ${state}`} aria-hidden="true" />
           {state === "open" ? "your Mac's shell" : state === "connecting" ? "connecting…" : "disconnected"}</span>
-        {state === "closed" && <button className="btn small" style={{ color: "#dfdedb", borderColor: "rgba(255,255,255,.3)" }}
+        {state === "closed" && <button className="btn small" style={{ color: "var(--term-fg)", borderColor: "var(--term-line)" }}
           onClick={() => setGen((g) => g + 1)}>New session</button>}
       </div>
       {note && <div className="note red" role="alert" style={{ margin: 12 }}><Info /><div>{note}</div></div>}
@@ -108,7 +112,7 @@ export default function TerminalArea() {
   useEffect(() => { load(); }, [load]);
   const locked = useCallback(() => setSt((s) => ({ ...s, unlocked: false })), []);
 
-  if (!st) return <div className="termwrap"><div className="row muted" style={{ margin: "auto", color: "#9e9d99" }}><Spinner /> Loading…</div></div>;
+  if (!st) return <div className="termwrap"><div className="row muted" style={{ margin: "auto", color: "var(--term-dim)" }}><Spinner /> Loading…</div></div>;
 
   if (!st.enabled) {
     return (

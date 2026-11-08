@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
+import { getTheme, setTheme } from "./theme.js";
 import { Logo, Refresh, Spinner } from "./icons.jsx";
 import Auth from "./pages/Auth.jsx";
 import Connect from "./pages/Connect.jsx";
@@ -37,6 +38,7 @@ function UsageMeter({ usage }) {
 
 function UserMenu({ user, onSignOut, go }) {
   const [open, setOpen] = useState(false);
+  const [theme, setT] = useState(getTheme());
   const ref = useRef(null);
   useEffect(() => {
     if (!open) return;
@@ -57,6 +59,15 @@ function UserMenu({ user, onSignOut, go }) {
           <div className="who"><div style={{ fontWeight: 600 }}>{user.display_name}</div><div className="faint">@{user.username}</div></div>
           <button role="menuitem" onClick={() => { setOpen(false); go("settings"); }}>Account settings</button>
           <button role="menuitem" onClick={onSignOut}>Sign out</button>
+          <div className="themeswitch">
+            <span className="faint" id="theme-label">Theme</span>
+            <div className="segmented" role="radiogroup" aria-labelledby="theme-label">
+              {[["light", "Light"], ["dark", "Dark"], ["system", "Auto"]].map(([v, label]) => (
+                <button key={v} type="button" role="radio" aria-checked={theme === v} className={theme === v ? "on" : ""}
+                  onClick={() => { setTheme(v); setT(v); }}>{label}</button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -127,7 +138,7 @@ export default function App() {
   return (
     <>
       <header className="topbar">
-        <div className="brand"><Logo /> ADDGate</div>
+        <div className="brand"><Logo /> <span><b>ADD</b><span className="light">Gate</span></span></div>
         <nav className="nav" aria-label="Main">
           {Object.entries(PAGES).map(([key, label]) => (
             <button key={key} className={page === key ? "on" : ""} aria-current={page === key ? "page" : undefined}
