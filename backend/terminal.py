@@ -55,7 +55,8 @@ def redeem_ticket(ticket, uid):
     return bool(rec) and rec["uid"] == uid and rec["expires"] >= time.time()
 
 
-HOOK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hooks", "shell_capture.zsh")
+from config import SHELL_HOOK as _SHELL_HOOK
+HOOK_FILE = str(_SHELL_HOOK)  # ~/gate/hooks/shell_capture.zsh: stable even when the app is rebuilt
 
 
 def _zsh_integration_dir():

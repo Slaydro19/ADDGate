@@ -44,10 +44,12 @@ export default function Capture({ go, refreshUsage }) {
           <h1>{(() => {
             const withClaude = sessions.filter((x) => x.kind !== "shell").length;
             const typed = sessions.filter((x) => x.kind === "shell").reduce((n, x) => n + x.commands, 0);
-            if (!withClaude && !typed) return "Nothing captured yet today.";
-            const a = withClaude ? `${withClaude} thing${withClaude > 1 ? "s" : ""} with Claude` : "";
-            const b = typed ? `${typed} command${typed > 1 ? "s" : ""} on your own` : "";
-            return `Today you worked on ${[a, b].filter(Boolean).join(" and ran ")}.`.replace("worked on " + b, "ran " + b);
+            const things = `${withClaude} thing${withClaude === 1 ? "" : "s"} with Claude`;
+            const cmds = `${typed} command${typed === 1 ? "" : "s"} on your own`;
+            if (withClaude && typed) return `Today you worked on ${things} and ran ${cmds}.`;
+            if (withClaude) return `Today you worked on ${things}.`;
+            if (typed) return `Today you ran ${cmds}.`;
+            return "Nothing captured yet today.";
           })()}</h1>
           <p className="sub">{closed
             ? "Work since the gate closed isn't quizzed until you open it again."
@@ -83,7 +85,7 @@ export default function Capture({ go, refreshUsage }) {
               : "scanning ~/.claude/projects instead"}</span>
             {!data.hook.installed && (
               <button className="btn small" style={{ marginTop: 8 }} onClick={installHook} disabled={!!busy}>
-                {busy === "hook" ? "Installing…" : "Install Stop hook"}</button>
+                {busy === "hook" ? "Installing…" : data.hook.stale ? "Repair Stop hook" : "Install Stop hook"}</button>
             )}
           </div>
           <div className="item">

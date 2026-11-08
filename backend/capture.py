@@ -125,13 +125,24 @@ def parse_transcript(path, since=None):
     return {"path": str(path), "session_id": session_id, "cwd": cwd, "events": events}
 
 
+def is_trivial(session):
+    """A quick one-off (one prompt, no file edits or commands, under 2 minutes) isn't work worth
+    quizzing on: connection checks like `claude -p "say ok"`, a quick question."""
+    ev = session["events"]
+    prompts = sum(1 for e in ev if e["who"] == "you")
+    acted = any(e["who"] in ("edit", "run") for e in ev)
+    stamps = [e["ts"] for e in ev if e["ts"]]
+    seconds = (max(stamps) - min(stamps)).total_seconds() if len(stamps) > 1 else 0
+    return prompts <= 1 and not acted and seconds < 120
+
+
 def sessions_today(since=None):
     found = scanned_transcripts()
     found.update(indexed_transcripts())
     sessions = []
     for tp in found:
         s = parse_transcript(tp, since=since)
-        if s:
+        if s and not is_trivial(s):
             sessions.append(s)
     sessions.sort(key=lambda s: s["events"][0]["ts"] or datetime.min.replace(tzinfo=timezone.utc))
     return sessions

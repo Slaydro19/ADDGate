@@ -40,3 +40,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Desktop app build output (rebuild with ./build_app.sh)
+build/
+dist/

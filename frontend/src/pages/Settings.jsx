@@ -203,7 +203,8 @@ export default function Settings({ user, go }) {
           <>
             <p style={{ margin: 0 }} className="muted">Lets ADDGate know the moment Claude finishes a reply. It adds one entry to
               your Claude Code settings and backs up the file first. Without it, ADDGate scans today's transcripts instead.</p>
-            <div><button className="btn" onClick={installHook}>Install Stop hook</button></div>
+            {hook?.stale && <p style={{ margin: 0, color: "var(--accent-text)" }}>An older ADDGate hook points at a file that moved. Repairing replaces it.</p>}
+            <div><button className="btn" onClick={installHook}>{hook?.stale ? "Repair Stop hook" : "Install Stop hook"}</button></div>
           </>
         )}
       </section>

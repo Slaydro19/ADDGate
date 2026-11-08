@@ -10,11 +10,11 @@ from datetime import datetime
 from pathlib import Path
 
 import db
-from config import GATE_HOME, load_config
+from config import GATE_HOME, SHELL_HOOK, load_config
 
 SHELL_DIR = GATE_HOME / "shell"
 FLAG = SHELL_DIR / ".enabled"
-HOOK_FILE = Path(__file__).resolve().parent / "hooks" / "shell_capture.zsh"
+HOOK_FILE = SHELL_HOOK  # ~/gate/hooks/shell_capture.zsh: stable even when the app is rebuilt
 ZSHRC = Path.home() / ".zshrc"
 MAX_LEN = 500
 NOISE = {"ls", "ll", "la", "l", "cd", "clear", "cls", "pwd", "exit", "history", "z", "j", "..", "...", "fg", "bg", "jobs"}
@@ -190,13 +190,18 @@ def zshrc_status():
         text = ZSHRC.read_text(encoding="utf-8")
     except OSError:
         text = ""
-    return {"installed": str(HOOK_FILE) in text, "line": f'source "{HOOK_FILE}"', "path": str(ZSHRC)}
+    line = f'source "{HOOK_FILE}"'
+    old = [l for l in text.splitlines() if "shell_capture.zsh" in l and l.strip().startswith("source")]
+    # "stale": an older line points at a copy inside the app folder; adding again replaces it
+    return {"installed": line in text, "stale": bool(old) and line not in text, "line": line, "path": str(ZSHRC)}
 
 
 def install_zshrc():
     st = zshrc_status()
     if st["installed"]:
         return st
+    if st["stale"]:
+        uninstall_zshrc()
     if ZSHRC.exists():
         backup = ZSHRC.with_name(f".zshrc.addgate-backup-{datetime.now():%Y%m%d-%H%M%S}")
         backup.write_bytes(ZSHRC.read_bytes())
@@ -210,7 +215,8 @@ def uninstall_zshrc():
     if not ZSHRC.exists():
         return zshrc_status()
     lines = ZSHRC.read_text(encoding="utf-8").splitlines(keepends=True)
-    keep = [l for l in lines if str(HOOK_FILE) not in l and not l.startswith("# ADDGate shell capture")]
+    keep = [l for l in lines if not ("shell_capture.zsh" in l and l.strip().startswith("source"))
+            and not l.startswith("# ADDGate shell capture")]
     ZSHRC.write_text("".join(keep), encoding="utf-8")
     return zshrc_status()
 
