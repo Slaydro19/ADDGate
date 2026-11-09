@@ -106,6 +106,41 @@ Upgrading from an older version? On first start, ADDGate imports the old JSON fi
 (`users.json`, `vault.json`, `days/`, `usage.json`) into the database and renames each one
 with an `.imported` suffix. Nothing is deleted. Files from the May CLI are left alone.
 
+## Admins
+
+Admins get an **Admin** tab: accounts, access, backups, health and an activity log. The first account on a
+Mac is an admin; any admin can make or remove others from the Accounts list.
+
+- **Accounts:** see who has an account, when they were last active and how much they use (counts and token
+  totals, never answers, vault entries, transcripts or typed commands). Add accounts, make or remove admins,
+  reset a password (a temporary one, shown once, that the person must change at next sign-in), unlock, sign
+  out everywhere, turn an account off, set a daily Claude token cap, or delete it (a backup is saved first).
+- **Access:** open or admin-only sign-up, and the starting settings new accounts get.
+- **Backups:** one a day automatically (last 14 kept), on demand, and before deleting an account or restoring.
+- **Health** and **Activity:** connection status, versions, and every sign-in and admin action.
+
+Deleting, restoring, resetting a password or changing a role asks for your own password again (15 minutes).
+The last admin can't be removed, turned off or deleted. If no admin is left, run from `backend/`:
+`../.venv/bin/python manage.py make-admin <username>`.
+
+Tests: `cd backend && ../.venv/bin/python -m unittest tests.test_admin`
+
+## Desktop app (Mac)
+
+ADDGate can run as a real Mac app, like Claude Desktop: its own window, Dock icon and Cmd+Q.
+
+```bash
+./build_app.sh
+```
+
+It packages ADDGate into `ADDGate.app` (Python included, about 60 MB), puts it in Applications and opens
+it. Opening the app starts ADDGate's server; quitting stops it. If `./start.sh` is already running, the
+app uses that server instead. Re-run `./build_app.sh` after each update.
+
+No Apple Developer account is needed: an app you build on your own Mac isn't quarantined, so it opens
+without a warning. Sharing the built `.app` with someone else would show Gatekeeper's warning (they'd
+right-click → Open); they can build it themselves from this repo instead.
+
 ## Daily use
 
 1. Leave ADDGate open and work in Claude Code as usual. Sessions show up on **Capture**.

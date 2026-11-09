@@ -29,7 +29,7 @@ function PasswordForm() {
       </div>
       <div className="row">
         <button className="btn" type="submit" disabled={busy || !f.current || !f.new}>Change password</button>
-        {msg && <span role="status" style={{ color: msg.bad ? "var(--red)" : "var(--green-text)" }}>{msg.text}</span>}
+        {msg && <span role="status" style={{ color: msg.bad ? "var(--red)" : "var(--green)" }}>{msg.text}</span>}
       </div>
     </form>
   );
@@ -113,7 +113,7 @@ function ShellSettings() {
         record is deleted right after. Start a command with a <strong>space</strong> and it's never recorded.
       </p>
       <div className="row">
-        <span className="pill" style={{ background: st.enabled ? "var(--green-soft)" : "var(--raised)", color: st.enabled ? "var(--green-text)" : "var(--muted)" }}>
+        <span className="pill" style={{ background: st.enabled ? "var(--green-soft)" : "var(--raised)", color: st.enabled ? "var(--green)" : "var(--muted)" }}>
           <span className="dot" aria-hidden="true" />{st.enabled ? "On" : "Off"}</span>
         <button className="btn small" onClick={() => save({ enabled: !st.enabled })}>{st.enabled ? "Turn off" : "Turn on"}</button>
       </div>
@@ -204,7 +204,8 @@ export default function Settings({ user, go }) {
             <>
               <p style={{ margin: 0 }} className="muted">The Stop hook tells ADDGate the moment Claude finishes a reply. It adds one entry to
                 your Claude Code settings and backs up the file first. Without it, ADDGate scans today's transcripts instead.</p>
-              <div><button className="btn" onClick={installHook}>Install Stop hook</button></div>
+              {hook?.stale && <p style={{ margin: 0, color: "var(--amber)" }}>An older ADDGate hook points at a file that moved. Repairing replaces it.</p>}
+              <div><button className="btn" onClick={installHook}>{hook?.stale ? "Repair Stop hook" : "Install Stop hook"}</button></div>
             </>
           )}
         </div>
@@ -249,7 +250,7 @@ export default function Settings({ user, go }) {
       {error && <div className="note red" role="alert"><Info /><div>{error}</div></div>}
       <div className="row">
         <button className="btn primary" onClick={save}>Save settings</button>
-        {saved && <span className="row" style={{ color: "var(--green-text)", gap: 6 }}><Check /> Saved</span>}
+        {saved && <span className="row" style={{ color: "var(--green)", gap: 6 }}><Check /> Saved</span>}
       </div>
     </main>
   );

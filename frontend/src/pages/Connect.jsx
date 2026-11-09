@@ -21,7 +21,7 @@ export default function Connect({ conn, onRetry }) {
   return (
     <div className="center">
       <div className="card">
-        <div className="brand"><Logo /> ADDGate</div>
+        <div className="brand"><Logo size={32} /> <span><b>ADD</b><span className="light">Gate</span></span></div>
         <div>
           <h1 style={{ fontSize: 26 }}>Connect to Claude</h1>
           <p className="sub">ADDGate runs on your own Claude subscription through Claude Code.

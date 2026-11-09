@@ -2,9 +2,17 @@ import React from "react";
 
 const base = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
 
-export const Logo = () => (
-  <svg width="26" height="26" viewBox="0 0 24 24" {...base} stroke="var(--accent)">
-    <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16M8 12h1M15 12h1" />
+/* The mark: a gate arch with its doorway cut out (the "arc" mark dealt by the taste skill).
+   Solid ink on the light theme, a gold gradient on the dark one. */
+export const Logo = ({ size = 28 }) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" role="img" aria-label="ADDGate" style={{ flex: "none" }}>
+    <defs>
+      <linearGradient id="gate-grad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="var(--logo-a)" /><stop offset="1" stopColor="var(--logo-b)" />
+      </linearGradient>
+    </defs>
+    <path fill="url(#gate-grad)" fillRule="evenodd" d="M5 27V15a11 11 0 0 1 22 0v12h-6.5V16a4.5 4.5 0 0 0-9 0v11z" />
+    <rect x="14.6" y="20" width="2.8" height="7" rx="1.4" fill="var(--logo-door)" />
   </svg>
 );
 export const Lock = () => (
